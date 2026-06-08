@@ -1,0 +1,38 @@
+{
+  "project_id": "sursidus",
+  "report_id": "52b12975-a875-4aef-a6a3-b326af3e47ce",
+  "client": {
+    "game_version": "0.8.2",
+    "build_channel": "early_access",
+    "platform": "linux"
+  },
+  "event": {
+    "schema_version": 2,
+    "commander_id": "550e8400-e29b-41d4-a716-446655440000",
+    "event_type": "bug_report",
+    "real_ts": "2026-06-06T11:55:00Z",
+    "game_time": 1843200,
+    "context": {
+      "location": {
+        "world_id": "reorte",
+        "area_id": "reorte_open",
+        "position": [4200.1, 0.0, -810.3]
+      }
+    },
+    "metrics": {
+      "economy.credits": 48200,
+      "ship.hull_pct": 0.72,
+      "ship.shield_pct": 0.0
+    },
+    "dimensions": {
+      "ship.id": "corsair_mk2"
+    },
+    "payload": {
+      "mood": 1,
+      "mood_label": "unhappy",
+      "notes": "The gate toll did not deduct from my credits but I got transited anyway",
+      "screenshot_png_base64": "iVBORw0KGgo=",
+      "active_missions": ["reorte_12_1"]
+    }
+  }
+}

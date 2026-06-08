@@ -1,0 +1,133 @@
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap');
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+
+@theme {
+  --font-sans: "Manrope", ui-sans-serif, system-ui, sans-serif;
+
+  /* ── Primary (Biolume) ── */
+  --color-primary: #DEF25B;
+  --color-primary-container: #C2D541;
+  --color-on-primary: #1A1E08;
+
+  /* ── Secondary (Moss) ── */
+  --color-secondary: #C4CC89;
+  --color-secondary-container: #3D4028;
+  --color-on-secondary-container: #E4E1C8;
+
+  /* ── Surface (Obsidian) hierarchy ── */
+  --color-surface-dim: #131318;
+  --color-surface-container-lowest: #0E0E12;
+  --color-surface-container-low: #1B1B20;
+  --color-surface-container: #1F1F25;
+  --color-surface-container-high: #2A2A31;
+  --color-surface-container-highest: #35353D;
+  --color-surface-bright: #3A3A44;
+
+  /* ── On-surface text ── */
+  --color-on-surface: #E4E1E9;
+  --color-on-surface-variant: #9E9BA5;
+  --color-on-surface-muted: #6B6873;
+
+  /* ── Outline ── */
+  --color-outline-variant: rgb(70 72 54 / 0.15);
+  --color-outline-ghost: rgb(70 72 54 / 0.30);
+
+  /* ── Semantic status ── */
+  --color-status-error: #F5726C;
+  --color-status-error-muted: rgb(245 114 108 / 0.15);
+  --color-status-warning: #E5C458;
+  --color-status-warning-muted: rgb(229 196 88 / 0.15);
+  --color-status-success: #7DD688;
+  --color-status-success-muted: rgb(125 214 136 / 0.15);
+  --color-status-info: #7DB5F5;
+  --color-status-info-muted: rgb(125 181 245 / 0.15);
+
+  /* ── Legacy accent bridge (maps to primary) ── */
+  --color-accent-300: #DEF25B;
+  --color-accent-400: #C2D541;
+  --color-accent-500: #8fa027;
+  --color-accent-600: #768520;
+  --color-accent-700: #5e6a1a;
+  --color-accent-800: #465013;
+  --color-accent-900: #2e350d;
+  --color-accent-950: #1a1e08;
+
+  /* ── Radius ── */
+  --radius-md: 0.375rem;
+  --radius-pill: 9999px;
+}
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  font-family: var(--font-sans);
+  background: var(--color-surface-dim);
+  color: var(--color-on-surface);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── Reusable design system utilities ── */
+
+/* Glass panel for floating elements (modals, dropdowns, tooltips) */
+.glass-panel {
+  background: rgb(58 58 68 / 0.6);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+/* Biolume ambient glow for floating elements */
+.biolume-glow {
+  box-shadow:
+    0px 20px 40px rgba(0, 0, 0, 0.4),
+    0px 0px 10px rgba(194, 213, 65, 0.05);
+}
+
+/* Ghost border (felt, not seen) */
+.ghost-border {
+  border: 1px solid rgb(70 72 54 / 0.15);
+}
+
+/* Ghost border with primary accent (focused inputs) */
+.ghost-border-focus {
+  border: 1px solid rgb(194 213 65 / 0.30);
+}
+
+/* Primary CTA gradient */
+.btn-gradient-primary {
+  background: linear-gradient(135deg, var(--color-primary), var(--color-primary-container));
+  color: var(--color-on-primary);
+}
+
+.btn-primary {
+  border-radius: 0.375rem;
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  font-size: 0.875rem;
+  font-weight: 700;
+  line-height: 1.25rem;
+  padding: 0.375rem 0.75rem;
+}
+
+.btn-secondary {
+  border: 1px solid var(--color-outline-ghost);
+  border-radius: 0.375rem;
+  color: var(--color-on-surface);
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  padding: 0.375rem 0.75rem;
+}
+
+.link-button {
+  color: var(--color-primary);
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+}
+
+/* Display text tightened letter-spacing */
+.tracking-display {
+  letter-spacing: -0.02em;
+}

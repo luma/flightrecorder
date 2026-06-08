@@ -1,0 +1,37 @@
+{
+  "project_id": "sursidus",
+  "batch_id": "98bb9fc1-c09f-45f2-bcf5-20ac71c2381a",
+  "sent_at": "2026-06-06T11:42:05Z",
+  "client": {
+    "game_version": "0.8.2",
+    "build_channel": "early_access",
+    "platform": "linux"
+  },
+  "events": [
+    {
+      "schema_version": 2,
+      "commander_id": "550e8400-e29b-41d4-a716-446655440000",
+      "event_type": "dock",
+      "real_ts": "2026-06-06T11:42:00Z",
+      "game_time": 1843200,
+      "context": {
+        "location": {
+          "world_id": "lave",
+          "area_id": "lave_primary",
+          "position": [1240.5, -80.0, 330.2]
+        }
+      },
+      "metrics": {
+        "economy.credits": 48200,
+        "ship.hull_pct": 0.94,
+        "ship.shield_pct": 1.0
+      },
+      "dimensions": {
+        "ship.id": "cobra_mk3"
+      },
+      "payload": {
+        "station_id": "stn_6a11eb1c-5cab-46f3-a911-0f8e8a14e6cd"
+      }
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+bin/
+
+# Frontend build output embedded in Go binary (copied by `make web-build`)
+api/spa/*
+!api/spa/embed.go
+!api/spa/.gitkeep
+
+.env
+.env.prod
+.env.bootstrap
+.env.infra
+
+# Terraform
+terraform/**/.terraform/
+*.tfstate
+*.tfstate.*
+
+secrets/
+
+# Local report screenshots and scratch data
+var/
+
+# Godot editor/test artifacts for the reusable client project
+godot/.godot/
+godot/.godot-test/

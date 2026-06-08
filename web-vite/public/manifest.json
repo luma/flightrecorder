@@ -1,0 +1,29 @@
+{
+  "name": "Flightcorder",
+  "short_name": "Flightcorder",
+  "description": "Telemetry for your game",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "theme_color": "#030712",
+  "background_color": "#030712",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/favicon-32.png",
+      "sizes": "32x32",
+      "type": "image/png"
+    }
+  ]
+}
