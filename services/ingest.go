@@ -35,6 +35,7 @@ type Ingest interface {
 type ClientInfo struct {
 	GameVersion  string `json:"game_version"`
 	BuildChannel string `json:"build_channel"`
+	CommitSHA    string `json:"commit_sha"`
 	Platform     string `json:"platform"`
 }
 
@@ -517,6 +518,7 @@ func createEventParams(projectID uuid.UUID, batchID pgtype.UUID, client ClientIn
 		CoordZ:           location.Position[2],
 		GameVersion:      client.GameVersion,
 		BuildChannel:     client.BuildChannel,
+		CommitSHA:        client.CommitSHA,
 		Platform:         client.Platform,
 		Context:          contextJSON,
 		Metrics:          metricsJSON,

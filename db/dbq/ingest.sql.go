@@ -139,6 +139,7 @@ INSERT INTO events (
     coord_z,
     game_version,
     build_channel,
+    commit_sha,
     platform,
     context,
     metrics,
@@ -148,7 +149,7 @@ INSERT INTO events (
     validation_errors
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-    $11, $12, $13, $14, $15, $16, $17, $18, $19, $20
+    $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21
 )
 RETURNING id
 `
@@ -167,6 +168,7 @@ type CreateEventParams struct {
 	CoordZ           float64         `json:"coord_z"`
 	GameVersion      string          `json:"game_version"`
 	BuildChannel     string          `json:"build_channel"`
+	CommitSHA        string          `json:"commit_sha"`
 	Platform         string          `json:"platform"`
 	Context          json.RawMessage `json:"context"`
 	Metrics          json.RawMessage `json:"metrics"`
@@ -191,6 +193,7 @@ func (q *Queries) CreateEvent(ctx context.Context, arg CreateEventParams) (uuid.
 		arg.CoordZ,
 		arg.GameVersion,
 		arg.BuildChannel,
+		arg.CommitSHA,
 		arg.Platform,
 		arg.Context,
 		arg.Metrics,

@@ -45,6 +45,7 @@ Request:
   "client": {
     "game_version": "0.8.2",
     "build_channel": "early_access",
+    "commit_sha": "abc123def456",
     "platform": "linux"
   },
   "events": [
@@ -125,6 +126,7 @@ Request:
   "client": {
     "game_version": "0.8.2",
     "build_channel": "early_access",
+    "commit_sha": "abc123def456",
     "platform": "linux"
   },
   "event": {

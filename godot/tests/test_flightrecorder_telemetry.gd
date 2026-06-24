@@ -227,6 +227,7 @@ func test_submit_bug_report_writes_report_body_to_project_wal() -> void:
 	assert_eq(records[0]["kind"], "bug_report")
 	assert_eq(records[0]["body"]["project_id"], _client.project_id)
 	assert_eq(records[0]["body"]["client"]["game_version"], _client.game_version)
+	assert_eq(records[0]["body"]["client"]["commit_sha"], _client.commit_sha)
 	assert_eq(records[0]["body"]["event"]["event_type"], "bug_report")
 	assert_eq(records[0]["body"]["event"]["payload"]["mood"], 2.0)
 	assert_eq(records[0]["body"]["event"]["payload"]["notes"], "Report note")

@@ -55,6 +55,7 @@ func _configure_client() -> bool:
 			"ingest_token": token_edit.text.strip_edges(),
 			"game_version": "godot-demo",
 			"build_channel": "local",
+			"commit_sha": "abc123def456",
 			"opt_in_enabled": true,
 		},
 	)

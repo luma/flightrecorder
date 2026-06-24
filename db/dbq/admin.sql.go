@@ -409,6 +409,7 @@ SELECT
     coord_z,
     game_version,
     build_channel,
+    commit_sha,
     platform,
     context,
     metrics,
@@ -473,6 +474,7 @@ type AdminListEventsRow struct {
 	CoordZ           float64         `json:"coord_z"`
 	GameVersion      string          `json:"game_version"`
 	BuildChannel     string          `json:"build_channel"`
+	CommitSHA        string          `json:"commit_sha"`
 	Platform         string          `json:"platform"`
 	Context          json.RawMessage `json:"context"`
 	Metrics          json.RawMessage `json:"metrics"`
@@ -517,6 +519,7 @@ func (q *Queries) AdminListEvents(ctx context.Context, arg AdminListEventsParams
 			&i.CoordZ,
 			&i.GameVersion,
 			&i.BuildChannel,
+			&i.CommitSHA,
 			&i.Platform,
 			&i.Context,
 			&i.Metrics,
@@ -550,6 +553,7 @@ SELECT
     coord_z,
     game_version,
     build_channel,
+    commit_sha,
     platform,
     context,
     metrics,
@@ -630,6 +634,7 @@ type AdminListEventsByFieldRow struct {
 	CoordZ           float64         `json:"coord_z"`
 	GameVersion      string          `json:"game_version"`
 	BuildChannel     string          `json:"build_channel"`
+	CommitSHA        string          `json:"commit_sha"`
 	Platform         string          `json:"platform"`
 	Context          json.RawMessage `json:"context"`
 	Metrics          json.RawMessage `json:"metrics"`
@@ -680,6 +685,7 @@ func (q *Queries) AdminListEventsByField(ctx context.Context, arg AdminListEvent
 			&i.CoordZ,
 			&i.GameVersion,
 			&i.BuildChannel,
+			&i.CommitSHA,
 			&i.Platform,
 			&i.Context,
 			&i.Metrics,

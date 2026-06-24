@@ -104,6 +104,7 @@ type EventSummary struct {
 	Coordinates      []float64       `json:"coordinates"`
 	GameVersion      string          `json:"game_version"`
 	BuildChannel     string          `json:"build_channel"`
+	CommitSHA        string          `json:"commit_sha"`
 	Platform         string          `json:"platform"`
 	Context          json.RawMessage `json:"context"`
 	Metrics          json.RawMessage `json:"metrics"`
@@ -335,6 +336,7 @@ func (s *adminService) ListEvents(ctx context.Context, filter EventListFilter) (
 				Coordinates:      []float64{row.CoordX, row.CoordY, row.CoordZ},
 				GameVersion:      row.GameVersion,
 				BuildChannel:     row.BuildChannel,
+				CommitSHA:        row.CommitSHA,
 				Platform:         row.Platform,
 				Context:          row.Context,
 				Metrics:          row.Metrics,
@@ -376,6 +378,7 @@ func (s *adminService) ListEvents(ctx context.Context, filter EventListFilter) (
 			Coordinates:      []float64{row.CoordX, row.CoordY, row.CoordZ},
 			GameVersion:      row.GameVersion,
 			BuildChannel:     row.BuildChannel,
+			CommitSHA:        row.CommitSHA,
 			Platform:         row.Platform,
 			Context:          row.Context,
 			Metrics:          row.Metrics,

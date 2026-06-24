@@ -618,6 +618,7 @@ function EventDrawer({
             ["Zone", event.zone_id],
             ["Version", event.game_version],
             ["Channel", event.build_channel],
+            ["Commit", event.commit_sha || "-"],
           ]}
         />
         {fieldRows.length > 0 ? <InfoGrid rows={fieldRows} /> : null}

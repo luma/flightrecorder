@@ -16,6 +16,7 @@ import (
 type clientInfo struct {
 	GameVersion  string `json:"game_version"`
 	BuildChannel string `json:"build_channel"`
+	CommitSHA    string `json:"commit_sha"`
 	Platform     string `json:"platform"`
 }
 
@@ -210,6 +211,7 @@ func requireEnvelope(event eventEnvelope, wantType string) {
 func requireClient(client clientInfo) {
 	requireNonEmpty("client.game_version", client.GameVersion)
 	requireNonEmpty("client.build_channel", client.BuildChannel)
+	requireNonEmpty("client.commit_sha", client.CommitSHA)
 	requireNonEmpty("client.platform", client.Platform)
 }
 

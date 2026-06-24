@@ -58,6 +58,7 @@ export interface EventSummary {
   coordinates: number[];
   game_version: string;
   build_channel: string;
+  commit_sha: string;
   platform: string;
   context: Record<string, unknown>;
   metrics: Record<string, unknown>;

@@ -66,11 +66,12 @@ The full-suite target writes Godot logs to `godot/.godot-test/`.
 
    ```gdscript
    FlightRecorderTelemetry.configure({
-   	"endpoint_url": "http://localhost:8080/",
-   	"project_id": "sursidus",
-   	"ingest_token": "<token>",
-   	"game_version": "0.8.2",
-   	"build_channel": "local",
+       "endpoint_url": "http://localhost:8080/",
+       "project_id": "sursidus",
+       "ingest_token": "<token>",
+       "game_version": "0.8.2",
+       "build_channel": "local",
+       "commit_sha": "abc123def456",
    })
    ```
 

@@ -21,6 +21,7 @@ const PROJECTS_DIR := "user://flightrecorder/projects"
 @export var ingest_token := ""
 @export var game_version := "dev"
 @export var build_channel := "local"
+@export var commit_sha := "dev"
 @export var platform := OS.get_name().to_lower()
 @export var opt_in_enabled := true
 @export var batch_size := 25
@@ -56,6 +57,7 @@ func configure(options: Dictionary) -> void:
 	ingest_token = str(options.get("ingest_token", ingest_token))
 	game_version = str(options.get("game_version", game_version))
 	build_channel = str(options.get("build_channel", build_channel))
+	commit_sha = str(options.get("commit_sha", commit_sha))
 	platform = str(options.get("platform", platform))
 	opt_in_enabled = bool(options.get("opt_in_enabled", opt_in_enabled))
 	batch_size = max(1, int(options.get("batch_size", batch_size)))
@@ -478,6 +480,7 @@ func _client_payload() -> Dictionary:
 	return {
 		"game_version": game_version,
 		"build_channel": build_channel,
+		"commit_sha": commit_sha,
 		"platform": platform,
 	}
 

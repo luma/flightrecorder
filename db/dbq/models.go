@@ -71,6 +71,7 @@ type Event struct {
 	EventJson        json.RawMessage `json:"event_json"`
 	ValidationErrors json.RawMessage `json:"validation_errors"`
 	CreatedAt        time.Time       `json:"created_at"`
+	CommitSHA        string          `json:"commit_sha"`
 }
 
 type EventField struct {
