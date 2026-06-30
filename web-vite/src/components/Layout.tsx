@@ -1,6 +1,7 @@
 import { Link, Outlet } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import LogoMark from "./LogoMark";
+import ProjectControls from "./ProjectControls";
 
 export default function Layout() {
   const { user, logout } = useAuth();
@@ -18,7 +19,10 @@ export default function Layout() {
               flightrecorder
             </span>
           </Link>
-          <div className="ml-auto flex items-center gap-3 text-sm text-on-surface-variant">
+
+          <ProjectControls className="flex items-start gap-3 text-sm text-on-surface-variant" />
+
+          <div className="ml-auto flex items-end gap-3 text-sm text-on-surface-variant">
             <span>{user?.email}</span>
             <button
               type="button"

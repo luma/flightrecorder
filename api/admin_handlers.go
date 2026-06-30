@@ -31,6 +31,8 @@ func registerAdminRoutes(adminGroup *route.RouterGroup, adminAuth services.Admin
 	protected.GET("/reports/:report_id/screenshot", makeAdminReportScreenshot(adminSvc))
 	protected.PATCH("/reports/:report_id", makeAdminReportUpdate(adminSvc))
 	protected.GET("/event-types", makeAdminEventTypes(adminSvc))
+	protected.GET("/projects", makeAdminProjects(adminSvc))
+	protected.POST("/projects", makeAdminCreateProject(adminSvc))
 	protected.GET("/settings", makeAdminSettings(adminSvc))
 	protected.POST("/settings/ingest-tokens", makeAdminCreateIngestToken(adminSvc))
 	protected.PATCH("/settings/ingest-tokens/:token_id", makeAdminSetIngestTokenEnabled(adminSvc))
@@ -282,6 +284,33 @@ func makeAdminEventTypes(adminSvc services.Admin) app.HandlerFunc {
 			return
 		}
 		c.JSON(consts.StatusOK, map[string]any{"event_types": eventTypes})
+	}
+}
+
+func makeAdminProjects(adminSvc services.Admin) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		projects, err := adminSvc.ListProjects(ctx)
+		if err != nil {
+			writeServiceError(c, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"projects": projects})
+	}
+}
+
+func makeAdminCreateProject(adminSvc services.Admin) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		var req services.CreateProjectRequest
+		if err := decodeJSONBody(c, &req); err != nil {
+			writeServiceError(c, fmt.Errorf("%w: %v", services.ErrBadRequest, err))
+			return
+		}
+		project, err := adminSvc.CreateProject(ctx, req)
+		if err != nil {
+			writeServiceError(c, err)
+			return
+		}
+		c.JSON(consts.StatusOK, project)
 	}
 }
 

@@ -54,18 +54,40 @@ interface Filters {
 }
 
 export default function Dashboard() {
-  const { projectScope, setProjectScope } = useProjectScope();
-  const initial = useMemo(() => filtersFromURL(projectScope || "sursidus"), []);
+  const { projectScope } = useProjectScope();
+  const initial = useMemo(() => filtersFromURL(projectScope || ""), []);
   const [activeTab, setActiveTab] = useState<Tab>(tabFromURL());
   const [filters, setFilters] = useState<Filters>(initial);
   const [selectedEvent, setSelectedEvent] = useState<EventSummary | null>(null);
   const [selectedReportID, setSelectedReportID] = useState<string | null>(null);
 
+  const switchProject = (projectID: string) => {
+    setSelectedEvent(null);
+    setSelectedReportID(null);
+    setFilters((prev) => ({
+      ...prev,
+      projectID,
+      eventType: "",
+      systemID: "",
+      zoneID: "",
+      commanderID: "",
+      fieldKey: "",
+      fieldValue: "",
+      reportStatus: "",
+      reportLabel: "",
+    }));
+  };
+
   useEffect(() => {
-    setProjectScope(filters.projectID || null);
+    if (projectScope && projectScope !== filters.projectID) {
+      switchProject(projectScope);
+    }
+  }, [filters.projectID, projectScope]);
+
+  useEffect(() => {
     const params = new URLSearchParams();
     params.set("tab", activeTab);
-    params.set("project_id", filters.projectID);
+    setParam(params, "project_id", filters.projectID);
     setParam(params, "from", filters.from);
     setParam(params, "to", filters.to);
     setParam(params, "event_type", filters.eventType);
@@ -79,46 +101,56 @@ export default function Dashboard() {
     setParam(params, "status", filters.reportStatus);
     setParam(params, "label", filters.reportLabel);
     window.history.replaceState(null, "", `${window.location.pathname}?${params.toString()}`);
-  }, [activeTab, filters, setProjectScope]);
+  }, [activeTab, filters]);
 
   const adminFilters = useMemo(() => toAdminFilters(filters), [filters]);
+  const hasProject = !!filters.projectID;
 
   const summary = useQuery({
+    enabled: hasProject,
     queryKey: ["summary", adminFilters],
     queryFn: () => api.summary(adminFilters),
   });
   const events = useQuery({
+    enabled: hasProject,
     queryKey: ["events", adminFilters],
     queryFn: () => api.events(adminFilters),
   });
   const reports = useQuery({
+    enabled: hasProject,
     queryKey: ["reports", adminFilters],
     queryFn: () => api.reports(adminFilters),
   });
   const eventTypes = useQuery({
+    enabled: hasProject,
     queryKey: ["event-types", filters.projectID],
     queryFn: () => api.eventTypes(filters.projectID),
   });
   const settings = useQuery({
+    enabled: hasProject,
     queryKey: ["settings", filters.projectID],
     queryFn: () => api.settings(filters.projectID),
   });
   const systemHeatmap = useQuery({
+    enabled: hasProject,
     queryKey: ["system-heatmap", adminFilters],
     queryFn: () => api.systemHeatmap(adminFilters),
   });
   const firstSystem = filters.systemID || systemHeatmap.data?.cells[0]?.system_id || "lave";
   const zoneHeatmap = useQuery({
+    enabled: hasProject,
     queryKey: ["zone-heatmap", adminFilters, firstSystem],
     queryFn: () => api.zoneHeatmap({ ...adminFilters, system_id: firstSystem }),
   });
   const funnels = useQuery({
+    enabled: hasProject,
     queryKey: ["funnels", adminFilters],
     queryFn: () => api.funnels(adminFilters),
   });
 
   const selectedCommander = filters.commanderID || events.data?.events[0]?.commander_id || "";
   const trace = useQuery({
+    enabled: hasProject && !!selectedCommander,
     queryKey: ["trace", filters.projectID, selectedCommander],
     queryFn: () =>
       selectedCommander
@@ -127,7 +159,7 @@ export default function Dashboard() {
   });
 
   const selectedReport = useQuery({
-    enabled: !!selectedReportID,
+    enabled: hasProject && !!selectedReportID,
     queryKey: ["report-detail", filters.projectID, selectedReportID],
     queryFn: () => api.reportDetail(filters.projectID, selectedReportID || ""),
   });
@@ -149,15 +181,16 @@ export default function Dashboard() {
   const setFilter = <K extends keyof Filters>(key: K, value: Filters[K]) => {
     setFilters((prev) => ({ ...prev, [key]: value }));
   };
+  const projectName = settings.data?.project.display_name || filters.projectID;
 
   return (
     <div className="space-y-5">
       <header className="flex flex-wrap items-center gap-3">
         <div>
           <p className="text-sm uppercase tracking-wide text-on-surface-variant">Collector Console</p>
-          <h1 className="text-3xl font-bold text-on-surface">flightrecorder</h1>
+          <h1 className="text-3xl font-bold text-on-surface">{projectName}</h1>
         </div>
-        <div className="ml-auto flex flex-wrap gap-2">
+        <div className="ml-auto flex flex-wrap items-end gap-2">
           <button type="button" onClick={copyPermalink} className="btn-secondary">Copy Link</button>
           <button type="button" onClick={() => exportRows("json")} className="btn-secondary">JSON</button>
           <button type="button" onClick={() => exportRows("csv")} className="btn-secondary">CSV</button>
@@ -276,7 +309,6 @@ function FilterBar({
   return (
     <Panel>
       <div className="grid gap-3 md:grid-cols-4">
-        <Input label="Project" value={filters.projectID} onChange={(value) => setFilter("projectID", value || "sursidus")} />
         <Select
           label="Range"
           value={rangeLabel(filters)}
@@ -540,7 +572,7 @@ function Settings({
             }
           }}
         >
-          <Input label="Token name" value={tokenName} onChange={setTokenName} placeholder="sursidus-dev" />
+          <Input label="Token name" value={tokenName} onChange={setTokenName} placeholder="local-dev" />
           <button type="submit" disabled={!trimmedTokenName || createToken.isPending} className="btn-primary disabled:opacity-50">
             {createToken.isPending ? "Creating..." : "Create Token"}
           </button>

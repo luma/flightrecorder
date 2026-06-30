@@ -457,6 +457,52 @@ SELECT
 FROM projects
 WHERE project_key = $1;
 
+-- name: AdminListProjects :many
+SELECT
+    project_key,
+    display_name,
+    validation_mode,
+    created_at,
+    updated_at
+FROM projects
+ORDER BY display_name ASC, project_key ASC;
+
+-- name: AdminUpsertProject :one
+INSERT INTO projects (
+    project_key,
+    display_name,
+    validation_mode,
+    ingest_config,
+    retention_config,
+    map_config,
+    report_config,
+    event_groups,
+    query_fields
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8, $9
+)
+ON CONFLICT (project_key) DO UPDATE
+SET display_name = EXCLUDED.display_name,
+    validation_mode = EXCLUDED.validation_mode,
+    ingest_config = EXCLUDED.ingest_config,
+    retention_config = EXCLUDED.retention_config,
+    map_config = EXCLUDED.map_config,
+    report_config = EXCLUDED.report_config,
+    event_groups = EXCLUDED.event_groups,
+    query_fields = EXCLUDED.query_fields,
+    updated_at = now()
+RETURNING
+    id,
+    project_key,
+    display_name,
+    validation_mode,
+    ingest_config,
+    retention_config,
+    map_config,
+    report_config,
+    event_groups,
+    query_fields;
+
 -- name: AdminListIngestTokens :many
 SELECT
     id,

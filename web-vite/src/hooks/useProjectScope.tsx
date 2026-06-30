@@ -14,7 +14,7 @@ const ProjectScopeContext = createContext<ProjectScopeContextValue>({
 
 export function ProjectScopeProvider({ children }: { children: ReactNode }) {
   const [projectScope, setProjectScopeState] = useState<string | null>(() => {
-    return sessionStorage.getItem(KEY);
+    return new URLSearchParams(window.location.search).get("project_id") || sessionStorage.getItem(KEY);
   });
   const setProjectScope = (id: string | null) => {
     setProjectScopeState(id);

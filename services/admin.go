@@ -22,6 +22,8 @@ import (
 )
 
 type Admin interface {
+	ListProjects(ctx context.Context) ([]ProjectSummary, error)
+	CreateProject(ctx context.Context, req CreateProjectRequest) (ProjectSettings, error)
 	Summary(ctx context.Context, filter TimeProjectFilter) (SummaryResponse, error)
 	ListEvents(ctx context.Context, filter EventListFilter) ([]EventSummary, error)
 	CommanderTrace(ctx context.Context, projectKey string, commanderID string, limit int32) ([]TraceEvent, error)
@@ -218,7 +220,27 @@ type SettingsResponse struct {
 	Tokens  []IngestTokenSummary `json:"tokens"`
 }
 
+type ProjectSummary struct {
+	ProjectID      string `json:"project_id"`
+	DisplayName    string `json:"display_name"`
+	ValidationMode string `json:"validation_mode"`
+	CreatedAt      string `json:"created_at"`
+	UpdatedAt      string `json:"updated_at"`
+}
+
 type ProjectSettings struct {
+	ProjectID       string          `json:"project_id"`
+	DisplayName     string          `json:"display_name"`
+	ValidationMode  string          `json:"validation_mode"`
+	IngestConfig    json.RawMessage `json:"ingest_config"`
+	RetentionConfig json.RawMessage `json:"retention_config"`
+	MapConfig       json.RawMessage `json:"map_config"`
+	ReportConfig    json.RawMessage `json:"report_config"`
+	EventGroups     json.RawMessage `json:"event_groups"`
+	QueryFields     json.RawMessage `json:"query_fields"`
+}
+
+type CreateProjectRequest struct {
 	ProjectID       string          `json:"project_id"`
 	DisplayName     string          `json:"display_name"`
 	ValidationMode  string          `json:"validation_mode"`
@@ -261,6 +283,46 @@ func NewAdminService(pool db.Pool, screenshotStore ScreenshotStore) Admin {
 		queries:         dbq.New(pool),
 		screenshotStore: screenshotStore,
 	}
+}
+
+func (s *adminService) ListProjects(ctx context.Context) ([]ProjectSummary, error) {
+	rows, err := s.queries.AdminListProjects(ctx)
+	if err != nil {
+		return nil, err
+	}
+	projects := make([]ProjectSummary, 0, len(rows))
+	for _, row := range rows {
+		projects = append(projects, ProjectSummary{
+			ProjectID:      row.ProjectKey,
+			DisplayName:    row.DisplayName,
+			ValidationMode: row.ValidationMode,
+			CreatedAt:      formatTime(row.CreatedAt),
+			UpdatedAt:      formatTime(row.UpdatedAt),
+		})
+	}
+	return projects, nil
+}
+
+func (s *adminService) CreateProject(ctx context.Context, req CreateProjectRequest) (ProjectSettings, error) {
+	params, err := createProjectParams(req)
+	if err != nil {
+		return ProjectSettings{}, err
+	}
+	row, err := s.queries.AdminUpsertProject(ctx, params)
+	if err != nil {
+		return ProjectSettings{}, err
+	}
+	return ProjectSettings{
+		ProjectID:       row.ProjectKey,
+		DisplayName:     row.DisplayName,
+		ValidationMode:  row.ValidationMode,
+		IngestConfig:    row.IngestConfig,
+		RetentionConfig: row.RetentionConfig,
+		MapConfig:       row.MapConfig,
+		ReportConfig:    row.ReportConfig,
+		EventGroups:     row.EventGroups,
+		QueryFields:     row.QueryFields,
+	}, nil
 }
 
 func (s *adminService) Summary(ctx context.Context, filter TimeProjectFilter) (SummaryResponse, error) {
@@ -818,7 +880,7 @@ func (s *adminService) EventTypes(ctx context.Context, projectKey string) ([]Eve
 }
 
 func (s *adminService) Settings(ctx context.Context, projectKey string) (SettingsResponse, error) {
-	settings, err := s.queries.AdminProjectSettings(ctx, projectKeyOrDefault(projectKey))
+	settings, err := s.queries.AdminProjectSettings(ctx, requiredProjectKey(projectKey))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return SettingsResponse{}, fmt.Errorf("%w: unknown project_id", ErrBadRequest)
@@ -900,7 +962,7 @@ func (s *adminService) SetIngestTokenEnabled(ctx context.Context, projectKey str
 }
 
 func (s *adminService) loadProject(ctx context.Context, projectKey string) (dbq.GetProjectByKeyRow, error) {
-	project, err := s.queries.GetProjectByKey(ctx, projectKeyOrDefault(projectKey))
+	project, err := s.queries.GetProjectByKey(ctx, requiredProjectKey(projectKey))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return dbq.GetProjectByKeyRow{}, fmt.Errorf("%w: unknown project_id", ErrBadRequest)
@@ -927,16 +989,162 @@ func OptionalString(value string) *string {
 	return &trimmed
 }
 
-// projectKeyOrDefault returns projectKey or falls back to "sursidus", the
-// default game project. This means an empty project_id silently targets a
-// real project rather than returning an error — callers that want strict
-// project isolation should validate projectKey before calling admin methods.
-func projectKeyOrDefault(projectKey string) string {
-	if strings.TrimSpace(projectKey) == "" {
-		return "sursidus"
-	}
+func requiredProjectKey(projectKey string) string {
 	return strings.TrimSpace(projectKey)
 }
+
+func createProjectParams(req CreateProjectRequest) (dbq.AdminUpsertProjectParams, error) {
+	projectKey := strings.TrimSpace(req.ProjectID)
+	if projectKey == "" {
+		return dbq.AdminUpsertProjectParams{}, fmt.Errorf("%w: project_id is required", ErrBadRequest)
+	}
+	if !validProjectKey(projectKey) {
+		return dbq.AdminUpsertProjectParams{}, fmt.Errorf("%w: project_id must use lowercase letters, numbers, hyphens, or underscores", ErrBadRequest)
+	}
+	displayName := strings.TrimSpace(req.DisplayName)
+	if displayName == "" {
+		return dbq.AdminUpsertProjectParams{}, fmt.Errorf("%w: display_name is required", ErrBadRequest)
+	}
+	validationMode := strings.TrimSpace(req.ValidationMode)
+	if validationMode == "" {
+		validationMode = "warn"
+	}
+	if validationMode != "warn" && validationMode != "strict" {
+		return dbq.AdminUpsertProjectParams{}, fmt.Errorf("%w: validation_mode must be warn or strict", ErrBadRequest)
+	}
+
+	ingestConfig, err := normalizeJSONConfig("ingest_config", req.IngestConfig, defaultIngestConfigJSON, "object")
+	if err != nil {
+		return dbq.AdminUpsertProjectParams{}, err
+	}
+	retentionConfig, err := normalizeJSONConfig("retention_config", req.RetentionConfig, defaultRetentionConfigJSON, "object")
+	if err != nil {
+		return dbq.AdminUpsertProjectParams{}, err
+	}
+	mapConfig, err := normalizeJSONConfig("map_config", req.MapConfig, defaultMapConfigJSON, "object")
+	if err != nil {
+		return dbq.AdminUpsertProjectParams{}, err
+	}
+	reportConfig, err := normalizeJSONConfig("report_config", req.ReportConfig, defaultReportConfigJSON, "object")
+	if err != nil {
+		return dbq.AdminUpsertProjectParams{}, err
+	}
+	eventGroups, err := normalizeJSONConfig("event_groups", req.EventGroups, defaultEventGroupsJSON, "object")
+	if err != nil {
+		return dbq.AdminUpsertProjectParams{}, err
+	}
+	queryFields, err := normalizeJSONConfig("query_fields", req.QueryFields, defaultQueryFieldsJSON, "array")
+	if err != nil {
+		return dbq.AdminUpsertProjectParams{}, err
+	}
+
+	if err := validateQueryFields(queryFields); err != nil {
+		return dbq.AdminUpsertProjectParams{}, err
+	}
+
+	return dbq.AdminUpsertProjectParams{
+		ProjectKey:      projectKey,
+		DisplayName:     displayName,
+		ValidationMode:  validationMode,
+		IngestConfig:    ingestConfig,
+		RetentionConfig: retentionConfig,
+		MapConfig:       mapConfig,
+		ReportConfig:    reportConfig,
+		EventGroups:     eventGroups,
+		QueryFields:     queryFields,
+	}, nil
+}
+
+func validProjectKey(value string) bool {
+	for _, r := range value {
+		if r >= 'a' && r <= 'z' {
+			continue
+		}
+		if r >= '0' && r <= '9' {
+			continue
+		}
+		if r == '-' || r == '_' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func normalizeJSONConfig(name string, value json.RawMessage, fallback string, wantKind string) (json.RawMessage, error) {
+	trimmed := strings.TrimSpace(string(value))
+	if trimmed == "" {
+		trimmed = fallback
+	}
+	if !json.Valid([]byte(trimmed)) {
+		return nil, fmt.Errorf("%w: %s must be valid JSON", ErrBadRequest, name)
+	}
+	var decoded any
+	if err := json.Unmarshal([]byte(trimmed), &decoded); err != nil {
+		return nil, fmt.Errorf("%w: %s must be valid JSON", ErrBadRequest, name)
+	}
+	switch wantKind {
+	case "object":
+		if _, ok := decoded.(map[string]any); !ok {
+			return nil, fmt.Errorf("%w: %s must be a JSON object", ErrBadRequest, name)
+		}
+	case "array":
+		if _, ok := decoded.([]any); !ok {
+			return nil, fmt.Errorf("%w: %s must be a JSON array", ErrBadRequest, name)
+		}
+	}
+	return json.RawMessage(trimmed), nil
+}
+
+func validateQueryFields(value json.RawMessage) error {
+	var fields []QueryFieldDefinition
+	if err := json.Unmarshal(value, &fields); err != nil {
+		return fmt.Errorf("%w: query_fields must match the project field schema", ErrBadRequest)
+	}
+	for _, field := range fields {
+		if strings.TrimSpace(field.Key) == "" || strings.TrimSpace(field.Source) == "" {
+			return fmt.Errorf("%w: query_fields require key and source", ErrBadRequest)
+		}
+		switch strings.TrimSpace(field.Type) {
+		case "string", "number", "bool":
+		default:
+			return fmt.Errorf("%w: query_fields type must be string, number, or bool", ErrBadRequest)
+		}
+	}
+	return nil
+}
+
+const defaultIngestConfigJSON = `{
+  "max_events_per_batch": 50,
+  "accept_gzip": true,
+  "allow_unknown_event_types": true,
+  "allow_screenshot_failures": true
+}`
+
+const defaultRetentionConfigJSON = `{
+  "event_days": 730,
+  "report_days": 1095,
+  "access_log_days": 14
+}`
+
+const defaultMapConfigJSON = `{
+  "systems_overlay": "",
+  "zone_extent_m": 30000,
+  "zone_heatmap_cell_m": 300
+}`
+
+const defaultReportConfigJSON = `{
+  "statuses": ["new", "seen", "reproduced", "fixed", "wont_fix", "needs_more_info"],
+  "labels": ["bug", "sentiment", "balance", "mission", "combat", "economy", "ui"],
+  "rate_limit_seconds": 60
+}`
+
+const defaultEventGroupsJSON = `{
+  "lifecycle": ["new_game", "game_continue", "game_exit", "dock", "undock"],
+  "report": ["bug_report"]
+}`
+
+const defaultQueryFieldsJSON = `[]`
 
 func newIngestToken() (string, string, error) {
 	var raw [32]byte

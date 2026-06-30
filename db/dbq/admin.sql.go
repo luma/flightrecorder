@@ -754,6 +754,51 @@ func (q *Queries) AdminListIngestTokens(ctx context.Context, projectID uuid.UUID
 	return items, nil
 }
 
+const adminListProjects = `-- name: AdminListProjects :many
+SELECT
+    project_key,
+    display_name,
+    validation_mode,
+    created_at,
+    updated_at
+FROM projects
+ORDER BY display_name ASC, project_key ASC
+`
+
+type AdminListProjectsRow struct {
+	ProjectKey     string    `json:"project_key"`
+	DisplayName    string    `json:"display_name"`
+	ValidationMode string    `json:"validation_mode"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
+}
+
+func (q *Queries) AdminListProjects(ctx context.Context) ([]AdminListProjectsRow, error) {
+	rows, err := q.db.Query(ctx, adminListProjects)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AdminListProjectsRow{}
+	for rows.Next() {
+		var i AdminListProjectsRow
+		if err := rows.Scan(
+			&i.ProjectKey,
+			&i.DisplayName,
+			&i.ValidationMode,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const adminListReportNotes = `-- name: AdminListReportNotes :many
 SELECT
     id,
@@ -1375,6 +1420,96 @@ func (q *Queries) AdminUpdateReport(ctx context.Context, arg AdminUpdateReportPa
 		&i.Status,
 		&i.Labels,
 		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const adminUpsertProject = `-- name: AdminUpsertProject :one
+INSERT INTO projects (
+    project_key,
+    display_name,
+    validation_mode,
+    ingest_config,
+    retention_config,
+    map_config,
+    report_config,
+    event_groups,
+    query_fields
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8, $9
+)
+ON CONFLICT (project_key) DO UPDATE
+SET display_name = EXCLUDED.display_name,
+    validation_mode = EXCLUDED.validation_mode,
+    ingest_config = EXCLUDED.ingest_config,
+    retention_config = EXCLUDED.retention_config,
+    map_config = EXCLUDED.map_config,
+    report_config = EXCLUDED.report_config,
+    event_groups = EXCLUDED.event_groups,
+    query_fields = EXCLUDED.query_fields,
+    updated_at = now()
+RETURNING
+    id,
+    project_key,
+    display_name,
+    validation_mode,
+    ingest_config,
+    retention_config,
+    map_config,
+    report_config,
+    event_groups,
+    query_fields
+`
+
+type AdminUpsertProjectParams struct {
+	ProjectKey      string          `json:"project_key"`
+	DisplayName     string          `json:"display_name"`
+	ValidationMode  string          `json:"validation_mode"`
+	IngestConfig    json.RawMessage `json:"ingest_config"`
+	RetentionConfig json.RawMessage `json:"retention_config"`
+	MapConfig       json.RawMessage `json:"map_config"`
+	ReportConfig    json.RawMessage `json:"report_config"`
+	EventGroups     json.RawMessage `json:"event_groups"`
+	QueryFields     json.RawMessage `json:"query_fields"`
+}
+
+type AdminUpsertProjectRow struct {
+	ID              uuid.UUID       `json:"id"`
+	ProjectKey      string          `json:"project_key"`
+	DisplayName     string          `json:"display_name"`
+	ValidationMode  string          `json:"validation_mode"`
+	IngestConfig    json.RawMessage `json:"ingest_config"`
+	RetentionConfig json.RawMessage `json:"retention_config"`
+	MapConfig       json.RawMessage `json:"map_config"`
+	ReportConfig    json.RawMessage `json:"report_config"`
+	EventGroups     json.RawMessage `json:"event_groups"`
+	QueryFields     json.RawMessage `json:"query_fields"`
+}
+
+func (q *Queries) AdminUpsertProject(ctx context.Context, arg AdminUpsertProjectParams) (AdminUpsertProjectRow, error) {
+	row := q.db.QueryRow(ctx, adminUpsertProject,
+		arg.ProjectKey,
+		arg.DisplayName,
+		arg.ValidationMode,
+		arg.IngestConfig,
+		arg.RetentionConfig,
+		arg.MapConfig,
+		arg.ReportConfig,
+		arg.EventGroups,
+		arg.QueryFields,
+	)
+	var i AdminUpsertProjectRow
+	err := row.Scan(
+		&i.ID,
+		&i.ProjectKey,
+		&i.DisplayName,
+		&i.ValidationMode,
+		&i.IngestConfig,
+		&i.RetentionConfig,
+		&i.MapConfig,
+		&i.ReportConfig,
+		&i.EventGroups,
+		&i.QueryFields,
 	)
 	return i, err
 }

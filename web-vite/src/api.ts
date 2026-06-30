@@ -196,6 +196,26 @@ export interface SettingsResponse {
   tokens: IngestTokenSummary[];
 }
 
+export interface ProjectSummary {
+  project_id: string;
+  display_name: string;
+  validation_mode: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateProjectRequest {
+  project_id: string;
+  display_name: string;
+  validation_mode: "warn" | "strict";
+  ingest_config: Record<string, unknown>;
+  retention_config: Record<string, unknown>;
+  map_config: Record<string, unknown>;
+  report_config: Record<string, unknown>;
+  event_groups: Record<string, string[]>;
+  query_fields: QueryField[];
+}
+
 export interface CreateIngestTokenResponse {
   token: string;
   summary: IngestTokenSummary;
@@ -237,6 +257,12 @@ export const api = {
     ),
   eventTypes: (projectID: string) =>
     apiFetch<{ event_types: EventTypeSummary[] }>(`/event-types?project_id=${encodeURIComponent(projectID)}`),
+  projects: () => apiFetch<{ projects: ProjectSummary[] }>("/projects"),
+  createProject: (body: CreateProjectRequest) =>
+    apiFetch<SettingsResponse["project"]>("/projects", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
   settings: (projectID: string) =>
     apiFetch<SettingsResponse>(`/settings${queryString({ project_id: projectID })}`),
   createIngestToken: (projectID: string, name: string) =>
