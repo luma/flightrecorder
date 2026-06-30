@@ -67,13 +67,17 @@ The full-suite target writes Godot logs to `godot/.godot-test/`.
    ```gdscript
    FlightRecorderTelemetry.configure({
        "endpoint_url": "http://localhost:8080/",
-       "project_id": "sursidus",
+       "project_id": "my-game",
        "ingest_token": "<token>",
        "game_version": "0.8.2",
        "build_channel": "local",
        "commit_sha": "abc123def456",
    })
    ```
+
+   The `project_id` must match a project created in the flightrecorder admin UI.
+   New projects start with empty event groups, query fields, and funnels; add
+   only the fields and funnels your game needs.
 
 5. Record events from gameplay code:
 
@@ -101,24 +105,37 @@ The full-suite target writes Godot logs to `godot/.godot-test/`.
 
 ## Local E2E Demo
 
-1. Start the collector and local Postgres from the `flightrecorder` repo root:
+1. Start local Postgres and the collector from the `flightrecorder` repo root:
 
    ```bash
    cp .env.example .env
    make dev-up
-   make migrate-up
    make serve
    ```
 
-2. Open `http://localhost:8080`, sign in with `admin@example.com`, and create an
-   ingest token in the Settings tab.
+   The service runs database migrations on startup. You can run
+   `make migrate-up` first if you want to check migrations separately.
 
-3. Open the `godot/` directory in Godot 4.6.
+2. Open `http://localhost:8080` and sign in with `admin@example.com`.
 
-4. Run the demo scene, paste the ingest token, and click `Emit Events` or
+3. If no projects exist, the admin UI opens the Add Project wizard. Create a
+   project whose ID matches the demo config, or update the demo config to match
+   the project you create.
+
+4. Add any query fields and funnels you want to inspect. For the sample events
+   below, useful query fields are `metrics.economy.credits`,
+   `metrics.ship.hull_pct`, `metrics.ship.shield_pct`, and
+   `dimensions.ship.id`. A simple funnel can match `dock` after `undock`, or a
+   one-step `bug_report` funnel for submitted reports.
+
+5. Create an ingest token in the Settings tab.
+
+6. Open the `godot/` directory in Godot 4.6.
+
+7. Run the demo scene, paste the ingest token, and click `Emit Events` or
    `Submit Report`.
 
-5. Return to the admin UI and check Event Explorer, Player Trace, heat-map
+8. Return to the admin UI and check Event Explorer, Player Trace, heat-map
    tables, funnels, and Bug Reports.
 
 ## Endpoint Settings

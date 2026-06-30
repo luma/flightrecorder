@@ -5,7 +5,9 @@ model, response codes, idempotency behavior, and gzip support for
 `flightrecorder`.
 
 The API is project-scoped so one collector can accept telemetry for multiple
-games. Sursidus is the first project, using `project_id: "sursidus"`.
+games. Create projects in the admin UI before sending telemetry. The example
+payloads below use `project_id: "sursidus"` because that is the checked-in
+fixture project, not because the collector requires that ID.
 
 ## Conventions
 
@@ -194,7 +196,7 @@ response or network failure keeps the events in the local write-ahead log.
 
 ## Admin API Shape
 
-The admin API powers the future Vite dashboard. It returns JSON only.
+The admin API powers the embedded Vite dashboard. It returns JSON only.
 
 | Route | Purpose |
 |---|---|
@@ -208,6 +210,11 @@ The admin API powers the future Vite dashboard. It returns JSON only.
 | `GET /api/admin/v1/reports/{report_id}` | Report detail with screenshot URL and surrounding trace. |
 | `PATCH /api/admin/v1/reports/{report_id}` | Update report status, labels, and internal notes. |
 | `GET /api/admin/v1/event-types` | Known event types, sample payloads, counts, and validation errors. |
+| `GET /api/admin/v1/projects` | Active projects for the top-nav project switcher. |
+| `POST /api/admin/v1/projects` | Create or update a project, including defaults, event groups, query fields, and funnels. |
+| `GET /api/admin/v1/settings` | Current project config and ingest tokens. |
+| `POST /api/admin/v1/settings/ingest-tokens` | Create an ingest token for the active project. |
+| `PATCH /api/admin/v1/settings/ingest-tokens/{token_id}` | Enable or disable an ingest token. |
 
 Configured field filters use `field_key` and optional `field_value` query
 parameters. `field_key` must match a project `query_fields` entry. `field_value`
@@ -219,3 +226,15 @@ is compared against the projected string value, number value, or bool value.
 counts and rates. Project settings responses include the raw `funnels`
 configuration so the dashboard can display and edit project-specific funnel
 definitions.
+
+Configured funnels support two modes:
+
+- `ordered`: later steps must occur after earlier steps by `game_time`.
+  Optional `within_seconds` bounds elapsed real time between ordered steps.
+- `unordered_presence`: ordering is ignored. Step N counts players who matched
+  every configured step from the first step through N in the selected time
+  window.
+
+Funnel step matchers can use `event_type`, `event_types`, `region_id`,
+`zone_id`, and filterable project query fields. A matcher `field_key` must refer
+to a project `query_fields` entry marked `filterable: true`.

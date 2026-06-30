@@ -3,7 +3,14 @@
 Project configuration lets `flightrecorder` stay reusable while supporting
 game-specific schemas, maps, and report workflows.
 
-The first project config is `examples/sursidus.project.json`.
+Create and edit projects from the admin UI. The top-nav `Add Project` button
+opens a wizard for identity, defaults, and schema. When there are no projects,
+the dashboard shows an empty state and opens the wizard automatically.
+
+The schema builders start empty for new projects. Event groups, query fields,
+and funnels are optional and should be added only when they reflect concepts in
+the game being integrated. `examples/sursidus.project.json` is a complete
+example, not a default template.
 
 ## Shape
 
@@ -105,12 +112,54 @@ The first project config is `examples/sursidus.project.json`.
 nested object traversal. This supports compact dotted metric keys and ordinary
 nested JSON.
 
-`funnels.mode` may be `ordered` or `unordered_presence`. Ordered funnels count
-players who reach steps in sequence, using `game_time` for ordering.
-`unordered_presence` funnels count cumulative step presence in the selected time
-window without requiring ordering; step N counts players that matched every step
-through N. Funnel field matchers can use `field_key` only for `query_fields`
-entries marked `filterable: true`.
+## Funnels
+
+Funnels describe per-project concepts that should be tracked as stepwise player
+progression. The admin UI exposes the same builder for new projects and
+existing project schema settings.
+
+Each funnel has:
+
+| Field | Notes |
+|---|---|
+| `id` | Stable lowercase identifier used in API responses. |
+| `name` | Human-facing label in the Funnels tab. |
+| `description` | Optional context shown with the funnel. |
+| `entity` | Currently always `player`. |
+| `mode` | `ordered` or `unordered_presence`. |
+| `enabled` | Optional; omitted or `true` means active. |
+| `steps` | One or more funnel steps. |
+
+Each step has:
+
+| Field | Notes |
+|---|---|
+| `id` | Stable step identifier, unique within the funnel. |
+| `label` | Human-facing step label. |
+| `match` | Event matcher for this step. |
+| `after` | Ordered funnels only; defaults to the previous step when omitted in the UI. |
+| `within_seconds` | Ordered funnels only; optional maximum real-time gap after the prior step. |
+
+Step matchers can combine:
+
+- `event_type` or `event_types`
+- `region_id`
+- `zone_id`
+- `field_key` and optional `field_value`
+
+`field_key` must reference a `query_fields` entry with `filterable: true`.
+`field_value` is typed from the query field definition, so number fields require
+numeric values and bool fields require `true` or `false`.
+
+`ordered` funnels count players who reach steps in sequence. Event ordering uses
+`game_time`; `within_seconds` uses the event timestamps to bound the elapsed
+real time between steps. `unordered_presence` funnels count cumulative step
+presence in the selected time window without requiring ordering; step N counts
+players that matched every step through N.
+
+One-step funnels are valid. For example, a `first_report` funnel can use a
+single `bug_report` step, making `started` and `completed` equal for that
+funnel.
 
 ## Initial Sursidus Policy
 

@@ -105,11 +105,16 @@ commands. To start from the checked-in local defaults:
 cp .env.example .env
 ```
 
-### 2. Apply Database Migrations
+### 2. Optional: Check Database Migrations
 
 ```bash
 make migrate-up
 ```
+
+The service runs `schema.Up()` when it starts, so `make serve` will bring the
+database to the latest schema before binding the API port. Running
+`make migrate-up` explicitly is optional, but useful when you want migration
+failures to surface before starting the server.
 
 If you want to inspect the local database directly:
 
@@ -117,182 +122,7 @@ If you want to inspect the local database directly:
 docker compose exec postgres psql -U flightrecorder -d flightrecorder
 ```
 
-### 3. Bootstrap a Local Project
-
-Migrations create the schema, but they do not seed a project. Add the local
-Sursidus project before opening the admin Settings screen or submitting
-fixtures. The values below mirror `examples/sursidus.project.json`:
-
-```bash
-docker compose exec postgres psql -U flightrecorder -d flightrecorder
-```
-
-Then run this SQL:
-
-```sql
-INSERT INTO projects (
-    project_key,
-    display_name,
-    validation_mode,
-    ingest_config,
-    retention_config,
-    map_config,
-    report_config,
-    event_groups,
-    query_fields,
-    funnels
-)
-VALUES (
-    'sursidus',
-    'Sursidus',
-    'warn',
-    '{
-        "max_events_per_batch": 50,
-        "accept_gzip": true,
-        "allow_unknown_event_types": true,
-        "allow_screenshot_failures": true
-    }'::jsonb,
-    '{
-        "event_days": 730,
-        "report_days": 1095,
-        "access_log_days": 14
-    }'::jsonb,
-    '{
-        "spatial_enabled": true,
-        "zone_extent_m": 30000,
-        "zone_heatmap_cell_m": 300
-    }'::jsonb,
-    '{
-        "statuses": ["new", "seen", "reproduced", "fixed", "wont_fix", "needs_more_info"],
-        "labels": ["bug", "sentiment", "balance", "mission", "combat", "economy", "ui"],
-        "rate_limit_seconds": 60
-    }'::jsonb,
-    '{
-        "lifecycle": ["game_continue", "game_exit", "dock", "undock"],
-        "economy": ["buy_commodity", "sell_commodity", "buy_intel", "sell_intel", "purchase_ship", "change_equipment", "clear_bounty"],
-        "mission": ["take_mission", "abandon_mission", "complete_mission", "complete_mission_objective", "mission_complication"],
-        "combat": ["player_death", "player_kills_npc", "npc_enters_combat_with_player", "player_enters_combat_with_npc"],
-        "legal": ["receive_bounty", "faction_rep_change"],
-        "report": ["bug_report"]
-    }'::jsonb,
-    '[
-        {
-            "key": "economy.credits",
-            "source": "metrics.economy.credits",
-            "type": "number",
-            "label": "Credits",
-            "filterable": true,
-            "aggregations": ["min", "max", "avg"]
-        },
-        {
-            "key": "ship.hull_pct",
-            "source": "metrics.ship.hull_pct",
-            "type": "number",
-            "label": "Hull",
-            "filterable": true,
-            "aggregations": ["min", "avg", "histogram"]
-        },
-        {
-            "key": "ship.shield_pct",
-            "source": "metrics.ship.shield_pct",
-            "type": "number",
-            "label": "Shield",
-            "filterable": true,
-            "aggregations": ["min", "avg", "histogram"]
-        },
-        {
-            "key": "ship.id",
-            "source": "dimensions.ship.id",
-            "type": "string",
-            "label": "Ship",
-            "filterable": true,
-            "aggregations": ["count"]
-        }
-    ]'::jsonb,
-    '[
-        {
-            "id": "onboarding_first_return",
-            "name": "Onboarding: first station return",
-            "description": "continue -> undock -> dock",
-            "entity": "player",
-            "mode": "unordered_presence",
-            "steps": [
-                { "id": "continued", "label": "Continued", "match": { "event_type": "game_continue" } },
-                { "id": "undocked", "label": "Undocked", "match": { "event_type": "undock" } },
-                { "id": "docked", "label": "Docked", "match": { "event_type": "dock" } }
-            ]
-        },
-        {
-            "id": "first_trade_loop",
-            "name": "First trade loop",
-            "description": "buy commodity -> sell commodity",
-            "entity": "player",
-            "mode": "unordered_presence",
-            "steps": [
-                { "id": "bought", "label": "Bought commodity", "match": { "event_type": "buy_commodity" } },
-                { "id": "sold", "label": "Sold commodity", "match": { "event_type": "sell_commodity" } }
-            ]
-        },
-        {
-            "id": "first_mission_loop",
-            "name": "First mission loop",
-            "description": "take mission -> complete mission",
-            "entity": "player",
-            "mode": "unordered_presence",
-            "steps": [
-                { "id": "took", "label": "Took mission", "match": { "event_type": "take_mission" } },
-                { "id": "completed", "label": "Completed mission", "match": { "event_type": "complete_mission" } }
-            ]
-        },
-        {
-            "id": "first_combat_entry",
-            "name": "First combat entry",
-            "description": "combat start",
-            "entity": "player",
-            "mode": "unordered_presence",
-            "steps": [
-                { "id": "started", "label": "Started combat", "match": { "event_type": "combat_start" } }
-            ]
-        },
-        {
-            "id": "first_station_return",
-            "name": "First station return",
-            "description": "undock -> dock",
-            "entity": "player",
-            "mode": "unordered_presence",
-            "steps": [
-                { "id": "undocked", "label": "Undocked", "match": { "event_type": "undock" } },
-                { "id": "docked", "label": "Docked", "match": { "event_type": "dock" } }
-            ]
-        },
-        {
-            "id": "first_report",
-            "name": "First player report",
-            "description": "bug_report submissions by time window",
-            "entity": "player",
-            "mode": "unordered_presence",
-            "steps": [
-                { "id": "reported", "label": "Reported", "match": { "event_type": "bug_report" } }
-            ]
-        }
-    ]'::jsonb
-)
-ON CONFLICT (project_key) DO UPDATE
-SET display_name = EXCLUDED.display_name,
-    validation_mode = EXCLUDED.validation_mode,
-    ingest_config = EXCLUDED.ingest_config,
-    retention_config = EXCLUDED.retention_config,
-    map_config = EXCLUDED.map_config,
-    report_config = EXCLUDED.report_config,
-    event_groups = EXCLUDED.event_groups,
-    query_fields = EXCLUDED.query_fields,
-    funnels = EXCLUDED.funnels,
-    updated_at = now();
-```
-
-Type `\q` to leave `psql`.
-
-### 4. Start the Service
+### 3. Start the Service
 
 ```bash
 make serve
@@ -324,12 +154,30 @@ production-like environments, set `ADMIN_DEV_LOGIN=false`, replace
 `ADMIN_SESSION_SECRET`, and configure the real auth path before exposing the
 service.
 
+### 4. Create a Local Project
+
+Migrations create the schema, but they do not seed projects. Use `Add Project`
+in the top nav. If no projects exist, the dashboard shows an empty state and
+opens the Add Project wizard automatically.
+
+The wizard has three sections:
+
+- `Identity`: project ID, display name, and validation mode.
+- `Defaults`: ingest limits, retention, map behavior, report statuses/labels,
+  and bug-report rate limit.
+- `Schema`: event groups, query fields, and funnels.
+
+The schema section starts empty. Add only the event groups, query fields, and
+funnels that make sense for the game you are integrating. The Sursidus example
+configuration remains available in `examples/sursidus.project.json` as a
+reference, not as the default starting point.
+
 ### 5. Create an Ingest Token
 
 In the admin UI:
 
 1. Open the `Settings` tab.
-2. Enter a token name such as `sursidus-dev`.
+2. Enter a token name such as `local-dev`.
 3. Click `Create Token`.
 4. Copy the token immediately. Only the hash is stored after creation.
 
@@ -366,6 +214,11 @@ report IDs.
 Refresh the admin UI and use the `Events`, `Reports`, `Trace`, `Regions`, `Zone`,
 `Funnels`, and `Schema` tabs to inspect the submitted data.
 
+The checked-in fixtures use `project_id: "sursidus"` and Sursidus-shaped event
+names/fields. Either create a local project with ID `sursidus` and matching
+schema/funnels, or edit the fixture JSON to use your own project ID and event
+shape.
+
 ### Local Storage
 
 With `REPORT_STORAGE_BACKEND=local`, report screenshots are written under
@@ -394,8 +247,33 @@ Delete the database volume and start fresh:
 
 ```bash
 make dev-reset
-make migrate-up
 ```
+
+The next `make serve` will run migrations automatically. You can still run
+`make migrate-up` manually after a reset if you want to validate the database
+before starting the service.
+
+## Deployment Notes
+
+The service runs application and River migrations on startup by calling
+`schema.Up()` before it creates the long-lived API database pool. The database
+role used at startup must have DDL privileges for tables, indexes, migration
+metadata, River tables, and `CREATE EXTENSION IF NOT EXISTS pgcrypto` on a fresh
+database.
+
+For PlanetScale Postgres, route normal service traffic through PgBouncer and
+run migrations through a direct connection:
+
+```text
+POSTGRES_PORT=6432
+POSTGRES_MIGRATE_PORT=5432
+POSTGRES_MIGRATE_MAX_CONNECTIONS=2
+POSTGRES_MIGRATE_MIN_CONNECTIONS=1
+```
+
+`POSTGRES_MIGRATE_HOST` is also supported when the direct endpoint has a
+different hostname. Keep the migration pool small so deploys do not exhaust
+backend connection slots.
 
 ## Verify
 
