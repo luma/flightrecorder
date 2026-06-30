@@ -139,7 +139,8 @@ INSERT INTO projects (
     map_config,
     report_config,
     event_groups,
-    query_fields
+    query_fields,
+    funnels
 )
 VALUES (
     'sursidus',
@@ -207,6 +208,73 @@ VALUES (
             "filterable": true,
             "aggregations": ["count"]
         }
+    ]'::jsonb,
+    '[
+        {
+            "id": "onboarding_first_return",
+            "name": "Onboarding: first station return",
+            "description": "continue -> undock -> dock",
+            "entity": "player",
+            "mode": "unordered_presence",
+            "steps": [
+                { "id": "continued", "label": "Continued", "match": { "event_type": "game_continue" } },
+                { "id": "undocked", "label": "Undocked", "match": { "event_type": "undock" } },
+                { "id": "docked", "label": "Docked", "match": { "event_type": "dock" } }
+            ]
+        },
+        {
+            "id": "first_trade_loop",
+            "name": "First trade loop",
+            "description": "buy commodity -> sell commodity",
+            "entity": "player",
+            "mode": "unordered_presence",
+            "steps": [
+                { "id": "bought", "label": "Bought commodity", "match": { "event_type": "buy_commodity" } },
+                { "id": "sold", "label": "Sold commodity", "match": { "event_type": "sell_commodity" } }
+            ]
+        },
+        {
+            "id": "first_mission_loop",
+            "name": "First mission loop",
+            "description": "take mission -> complete mission",
+            "entity": "player",
+            "mode": "unordered_presence",
+            "steps": [
+                { "id": "took", "label": "Took mission", "match": { "event_type": "take_mission" } },
+                { "id": "completed", "label": "Completed mission", "match": { "event_type": "complete_mission" } }
+            ]
+        },
+        {
+            "id": "first_combat_entry",
+            "name": "First combat entry",
+            "description": "combat start",
+            "entity": "player",
+            "mode": "unordered_presence",
+            "steps": [
+                { "id": "started", "label": "Started combat", "match": { "event_type": "combat_start" } }
+            ]
+        },
+        {
+            "id": "first_station_return",
+            "name": "First station return",
+            "description": "undock -> dock",
+            "entity": "player",
+            "mode": "unordered_presence",
+            "steps": [
+                { "id": "undocked", "label": "Undocked", "match": { "event_type": "undock" } },
+                { "id": "docked", "label": "Docked", "match": { "event_type": "dock" } }
+            ]
+        },
+        {
+            "id": "first_report",
+            "name": "First player report",
+            "description": "bug_report submissions by time window",
+            "entity": "player",
+            "mode": "unordered_presence",
+            "steps": [
+                { "id": "reported", "label": "Reported", "match": { "event_type": "bug_report" } }
+            ]
+        }
     ]'::jsonb
 )
 ON CONFLICT (project_key) DO UPDATE
@@ -218,6 +286,7 @@ SET display_name = EXCLUDED.display_name,
     report_config = EXCLUDED.report_config,
     event_groups = EXCLUDED.event_groups,
     query_fields = EXCLUDED.query_fields,
+    funnels = EXCLUDED.funnels,
     updated_at = now();
 ```
 

@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   api,
   type CreateProjectRequest,
+  type FunnelDefinition,
   type ProjectSummary,
   type QueryField,
 } from "../api";
@@ -114,6 +115,7 @@ function AddProjectWizard({
   const [rateLimitSeconds, setRateLimitSeconds] = useState("60");
   const [eventGroupsValue, setEventGroupsValue] = useState(JSON.stringify(defaultEventGroups, null, 2));
   const [queryFieldsValue, setQueryFieldsValue] = useState(JSON.stringify(defaultQueryFields, null, 2));
+  const [funnelsValue, setFunnelsValue] = useState(JSON.stringify(defaultFunnels, null, 2));
   const [validationError, setValidationError] = useState("");
 
   const createProject = useMutation({
@@ -131,9 +133,11 @@ function AddProjectWizard({
     }
     let eventGroups: Record<string, string[]>;
     let queryFields: QueryField[];
+    let funnels: FunnelDefinition[];
     try {
       eventGroups = JSON.parse(eventGroupsValue);
       queryFields = JSON.parse(queryFieldsValue);
+      funnels = JSON.parse(funnelsValue);
     } catch (err) {
       setValidationError(err instanceof Error ? err.message : "Schema JSON is invalid.");
       return null;
@@ -165,6 +169,7 @@ function AddProjectWizard({
       },
       event_groups: eventGroups,
       query_fields: queryFields,
+      funnels,
     };
   };
 
@@ -227,9 +232,10 @@ function AddProjectWizard({
         ) : null}
 
         {step === 2 ? (
-          <div className="grid gap-3 lg:grid-cols-2">
+          <div className="grid gap-3 lg:grid-cols-3">
             <TextArea label="Event groups JSON" value={eventGroupsValue} onChange={setEventGroupsValue} rows={18} />
             <TextArea label="Query fields JSON" value={queryFieldsValue} onChange={setQueryFieldsValue} rows={18} />
+            <TextArea label="Funnels JSON" value={funnelsValue} onChange={setFunnelsValue} rows={18} />
           </div>
         ) : null}
 
@@ -389,3 +395,5 @@ const defaultQueryFields: QueryField[] = [
     aggregations: ["count"],
   },
 ];
+
+const defaultFunnels: FunnelDefinition[] = [];

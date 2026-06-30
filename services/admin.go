@@ -148,13 +148,49 @@ type ZoneHeatmapCell struct {
 }
 
 type FunnelSummary struct {
-	ID          string  `json:"id"`
-	Name        string  `json:"name"`
-	Description string  `json:"description"`
-	Started     int64   `json:"started"`
-	Completed   int64   `json:"completed"`
-	Rate        float64 `json:"rate"`
-	Dropoff     string  `json:"dropoff"`
+	ID          string              `json:"id"`
+	Name        string              `json:"name"`
+	Description string              `json:"description"`
+	Entity      string              `json:"entity"`
+	Started     int64               `json:"started"`
+	Completed   int64               `json:"completed"`
+	Rate        float64             `json:"rate"`
+	Dropoff     string              `json:"dropoff"`
+	Steps       []FunnelStepSummary `json:"steps"`
+}
+
+type FunnelStepSummary struct {
+	ID    string  `json:"id"`
+	Label string  `json:"label"`
+	Count int64   `json:"count"`
+	Rate  float64 `json:"rate"`
+}
+
+type FunnelDefinition struct {
+	ID          string             `json:"id"`
+	Name        string             `json:"name"`
+	Description string             `json:"description,omitempty"`
+	Entity      string             `json:"entity"`
+	Mode        string             `json:"mode,omitempty"`
+	Enabled     *bool              `json:"enabled,omitempty"`
+	Steps       []FunnelStepConfig `json:"steps"`
+}
+
+type FunnelStepConfig struct {
+	ID            string             `json:"id"`
+	Label         string             `json:"label"`
+	Match         FunnelEventMatcher `json:"match"`
+	After         string             `json:"after,omitempty"`
+	WithinSeconds *int64             `json:"within_seconds,omitempty"`
+}
+
+type FunnelEventMatcher struct {
+	EventType  string          `json:"event_type,omitempty"`
+	EventTypes []string        `json:"event_types,omitempty"`
+	FieldKey   string          `json:"field_key,omitempty"`
+	FieldValue json.RawMessage `json:"field_value,omitempty"`
+	RegionID   string          `json:"region_id,omitempty"`
+	ZoneID     string          `json:"zone_id,omitempty"`
 }
 
 type FunnelsResponse struct {
@@ -238,6 +274,7 @@ type ProjectSettings struct {
 	ReportConfig    json.RawMessage `json:"report_config"`
 	EventGroups     json.RawMessage `json:"event_groups"`
 	QueryFields     json.RawMessage `json:"query_fields"`
+	Funnels         json.RawMessage `json:"funnels"`
 }
 
 type CreateProjectRequest struct {
@@ -250,6 +287,7 @@ type CreateProjectRequest struct {
 	ReportConfig    json.RawMessage `json:"report_config"`
 	EventGroups     json.RawMessage `json:"event_groups"`
 	QueryFields     json.RawMessage `json:"query_fields"`
+	Funnels         json.RawMessage `json:"funnels"`
 }
 
 type IngestTokenSummary struct {
@@ -275,12 +313,14 @@ type CreateIngestTokenResponse struct {
 
 type adminService struct {
 	queries         *dbq.Queries
+	pool            db.Pool
 	screenshotStore ScreenshotStore
 }
 
 func NewAdminService(pool db.Pool, screenshotStore ScreenshotStore) Admin {
 	return &adminService{
 		queries:         dbq.New(pool),
+		pool:            pool,
 		screenshotStore: screenshotStore,
 	}
 }
@@ -322,6 +362,7 @@ func (s *adminService) CreateProject(ctx context.Context, req CreateProjectReque
 		ReportConfig:    row.ReportConfig,
 		EventGroups:     row.EventGroups,
 		QueryFields:     row.QueryFields,
+		Funnels:         row.Funnels,
 	}, nil
 }
 
@@ -633,24 +674,29 @@ func (s *adminService) Funnels(ctx context.Context, filter TimeProjectFilter) (F
 	if err != nil {
 		return FunnelsResponse{}, err
 	}
-	counts, err := s.queries.AdminFunnelCounts(ctx, dbq.AdminFunnelCountsParams{
-		ProjectID: project.ID,
-		RealTs:    filter.From,
-		RealTs_2:  filter.To,
-	})
+	defs, err := projectFunnels(project.Funnels)
 	if err != nil {
 		return FunnelsResponse{}, err
 	}
-	return FunnelsResponse{
-		Funnels: []FunnelSummary{
-			funnel("onboarding_first_return", "Onboarding: first station return", "continue -> undock -> dock", counts.OnboardingStarted, counts.OnboardingCompleted),
-			funnel("first_trade_loop", "First trade loop", "buy commodity -> sell commodity", counts.TradeStarted, counts.TradeCompleted),
-			funnel("first_mission_loop", "First mission loop", "take mission -> complete mission", counts.MissionStarted, counts.MissionCompleted),
-			funnel("first_combat_survival", "First combat survival", "combat start -> no death in window", counts.CombatStarted, counts.CombatCompleted),
-			funnel("first_station_return", "First station return", "undock -> dock", counts.StationReturnStarted, counts.StationReturnCompleted),
-			funnel("first_report", "First player report", "bug_report submissions by time window", counts.ReportStarted, counts.ReportCompleted),
-		},
-	}, nil
+	if err := validateProjectFunnels(project.QueryFields, project.Funnels); err != nil {
+		return FunnelsResponse{}, err
+	}
+	fieldDefs, err := queryFieldMap(project.QueryFields)
+	if err != nil {
+		return FunnelsResponse{}, err
+	}
+	out := make([]FunnelSummary, 0, len(defs))
+	for _, def := range defs {
+		if def.Enabled != nil && !*def.Enabled {
+			continue
+		}
+		summary, err := s.evaluateFunnel(ctx, project.ID, filter.From, filter.To, def, fieldDefs)
+		if err != nil {
+			return FunnelsResponse{}, err
+		}
+		out = append(out, summary)
+	}
+	return FunnelsResponse{Funnels: out}, nil
 }
 
 func (s *adminService) ListReports(ctx context.Context, filter ReportListFilter) ([]ReportSummary, error) {
@@ -906,6 +952,7 @@ func (s *adminService) Settings(ctx context.Context, projectKey string) (Setting
 			ReportConfig:    settings.ReportConfig,
 			EventGroups:     settings.EventGroups,
 			QueryFields:     settings.QueryFields,
+			Funnels:         settings.Funnels,
 		},
 		Tokens: tokens,
 	}, nil
@@ -1037,8 +1084,15 @@ func createProjectParams(req CreateProjectRequest) (dbq.AdminUpsertProjectParams
 	if err != nil {
 		return dbq.AdminUpsertProjectParams{}, err
 	}
+	funnels, err := normalizeJSONConfig("funnels", req.Funnels, defaultFunnelsJSON, "array")
+	if err != nil {
+		return dbq.AdminUpsertProjectParams{}, err
+	}
 
 	if err := validateQueryFields(queryFields); err != nil {
+		return dbq.AdminUpsertProjectParams{}, err
+	}
+	if err := validateProjectFunnels(queryFields, funnels); err != nil {
 		return dbq.AdminUpsertProjectParams{}, err
 	}
 
@@ -1052,6 +1106,7 @@ func createProjectParams(req CreateProjectRequest) (dbq.AdminUpsertProjectParams
 		ReportConfig:    reportConfig,
 		EventGroups:     eventGroups,
 		QueryFields:     queryFields,
+		Funnels:         funnels,
 	}, nil
 }
 
@@ -1114,6 +1169,407 @@ func validateQueryFields(value json.RawMessage) error {
 	return nil
 }
 
+func projectFunnels(value json.RawMessage) ([]FunnelDefinition, error) {
+	var funnels []FunnelDefinition
+	if err := json.Unmarshal(value, &funnels); err != nil {
+		return nil, fmt.Errorf("%w: funnels must match the project funnel schema", ErrBadRequest)
+	}
+	return funnels, nil
+}
+
+func validateProjectFunnels(queryFields json.RawMessage, value json.RawMessage) error {
+	funnels, err := projectFunnels(value)
+	if err != nil {
+		return err
+	}
+	fields, err := queryFieldMap(queryFields)
+	if err != nil {
+		return err
+	}
+	seenFunnels := map[string]bool{}
+	for _, funnel := range funnels {
+		id := strings.TrimSpace(funnel.ID)
+		if id == "" || !validProjectKey(id) {
+			return fmt.Errorf("%w: funnel id must use lowercase letters, numbers, hyphens, or underscores", ErrBadRequest)
+		}
+		if seenFunnels[id] {
+			return fmt.Errorf("%w: duplicate funnel id", ErrBadRequest)
+		}
+		seenFunnels[id] = true
+		if strings.TrimSpace(funnel.Name) == "" {
+			return fmt.Errorf("%w: funnel name is required", ErrBadRequest)
+		}
+		if strings.TrimSpace(funnel.Entity) != "player" {
+			return fmt.Errorf("%w: funnel entity must be player", ErrBadRequest)
+		}
+		mode := funnelMode(funnel)
+		if mode != "ordered" && mode != "unordered_presence" {
+			return fmt.Errorf("%w: funnel mode must be ordered or unordered_presence", ErrBadRequest)
+		}
+		if len(funnel.Steps) == 0 {
+			return fmt.Errorf("%w: funnels require at least one step", ErrBadRequest)
+		}
+		seenSteps := map[string]bool{}
+		for stepIndex, step := range funnel.Steps {
+			stepID := strings.TrimSpace(step.ID)
+			if stepID == "" || !validProjectKey(stepID) {
+				return fmt.Errorf("%w: funnel step id must use lowercase letters, numbers, hyphens, or underscores", ErrBadRequest)
+			}
+			if seenSteps[stepID] {
+				return fmt.Errorf("%w: duplicate funnel step id", ErrBadRequest)
+			}
+			if strings.TrimSpace(step.Label) == "" {
+				return fmt.Errorf("%w: funnel step label is required", ErrBadRequest)
+			}
+			if err := validateFunnelMatcher(step.Match, fields); err != nil {
+				return err
+			}
+			if strings.TrimSpace(step.After) != "" {
+				if mode != "ordered" {
+					return fmt.Errorf("%w: after may only be used with ordered funnels", ErrBadRequest)
+				}
+				if !seenSteps[strings.TrimSpace(step.After)] {
+					return fmt.Errorf("%w: funnel step after must reference an earlier step", ErrBadRequest)
+				}
+			}
+			if step.WithinSeconds != nil {
+				if mode != "ordered" {
+					return fmt.Errorf("%w: within_seconds may only be used with ordered funnels", ErrBadRequest)
+				}
+				if *step.WithinSeconds <= 0 {
+					return fmt.Errorf("%w: within_seconds must be positive", ErrBadRequest)
+				}
+				if stepIndex == 0 {
+					return fmt.Errorf("%w: first funnel step cannot use within_seconds", ErrBadRequest)
+				}
+			}
+			seenSteps[stepID] = true
+		}
+	}
+	return nil
+}
+
+func validateFunnelMatcher(match FunnelEventMatcher, fields map[string]QueryFieldDefinition) error {
+	matcherCount := 0
+	if strings.TrimSpace(match.EventType) != "" {
+		matcherCount++
+	}
+	eventTypes := trimmedStrings(match.EventTypes)
+	if len(eventTypes) > 0 {
+		matcherCount++
+	}
+	if strings.TrimSpace(match.EventType) != "" && len(eventTypes) > 0 {
+		return fmt.Errorf("%w: event_type and event_types are mutually exclusive", ErrBadRequest)
+	}
+	fieldKey := strings.TrimSpace(match.FieldKey)
+	if fieldKey != "" {
+		matcherCount++
+		field, ok := fields[fieldKey]
+		if !ok {
+			return fmt.Errorf("%w: unknown funnel field_key", ErrBadRequest)
+		}
+		if !field.Filterable {
+			return fmt.Errorf("%w: funnel field_key must be filterable", ErrBadRequest)
+		}
+		if hasRawJSONValue(match.FieldValue) {
+			if _, _, err := funnelFieldValue(field.Type, match.FieldValue); err != nil {
+				return err
+			}
+		}
+	}
+	if strings.TrimSpace(match.RegionID) != "" {
+		matcherCount++
+	}
+	if strings.TrimSpace(match.ZoneID) != "" {
+		matcherCount++
+	}
+	if matcherCount == 0 {
+		return fmt.Errorf("%w: funnel step requires at least one matcher", ErrBadRequest)
+	}
+	return nil
+}
+
+func queryFieldMap(queryFields json.RawMessage) (map[string]QueryFieldDefinition, error) {
+	var fields []QueryFieldDefinition
+	if err := json.Unmarshal(queryFields, &fields); err != nil {
+		return nil, fmt.Errorf("%w: query_fields must match the project field schema", ErrBadRequest)
+	}
+	out := make(map[string]QueryFieldDefinition, len(fields))
+	for _, field := range fields {
+		key := strings.TrimSpace(field.Key)
+		if key == "" {
+			continue
+		}
+		field.Key = key
+		field.Type = strings.TrimSpace(field.Type)
+		out[key] = field
+	}
+	return out, nil
+}
+
+func (s *adminService) evaluateFunnel(ctx context.Context, projectID uuid.UUID, from time.Time, to time.Time, def FunnelDefinition, fields map[string]QueryFieldDefinition) (FunnelSummary, error) {
+	sql, args, err := buildFunnelCountsQuery(projectID, from, to, def, fields)
+	if err != nil {
+		return FunnelSummary{}, err
+	}
+	counts := make([]int64, len(def.Steps))
+	scanTargets := make([]any, len(counts))
+	for i := range counts {
+		scanTargets[i] = &counts[i]
+	}
+	if err := s.pool.QueryRow(ctx, sql, args...).Scan(scanTargets...); err != nil {
+		return FunnelSummary{}, err
+	}
+	return funnelSummary(def, counts), nil
+}
+
+func buildFunnelCountsQuery(projectID uuid.UUID, from time.Time, to time.Time, def FunnelDefinition, fields map[string]QueryFieldDefinition) (string, []any, error) {
+	builder := funnelQueryBuilder{args: []any{projectID, from, to}}
+	stepIndexByID := make(map[string]int, len(def.Steps))
+	ctes := make([]string, 0, len(def.Steps))
+	for i, step := range def.Steps {
+		stepName := funnelStepCTEName(i)
+		stepIndexByID[strings.TrimSpace(step.ID)] = i
+		stepSQL, err := builder.funnelStepCTE(stepName, i, step, def, stepIndexByID, fields)
+		if err != nil {
+			return "", nil, err
+		}
+		ctes = append(ctes, stepSQL)
+	}
+	var sql strings.Builder
+	sql.WriteString("WITH ")
+	sql.WriteString(strings.Join(ctes, ", "))
+	sql.WriteString(" SELECT ")
+	for i := range def.Steps {
+		if i > 0 {
+			sql.WriteString(", ")
+		}
+		sql.WriteString("(SELECT count(*)::bigint FROM ")
+		sql.WriteString(funnelStepCTEName(i))
+		sql.WriteString(") AS step_")
+		sql.WriteString(strconv.Itoa(i + 1))
+		sql.WriteString("_count")
+	}
+	return sql.String(), builder.args, nil
+}
+
+type funnelQueryBuilder struct {
+	args []any
+}
+
+func (b *funnelQueryBuilder) addArg(value any) string {
+	b.args = append(b.args, value)
+	return "$" + strconv.Itoa(len(b.args))
+}
+
+func (b *funnelQueryBuilder) funnelStepCTE(name string, index int, step FunnelStepConfig, def FunnelDefinition, stepIndexByID map[string]int, fields map[string]QueryFieldDefinition) (string, error) {
+	join, where, err := b.funnelMatcherSQL(step.Match, fields)
+	if err != nil {
+		return "", err
+	}
+	if funnelMode(def) == "unordered_presence" {
+		return b.unorderedStepCTE(name, index, join, where), nil
+	}
+	dependency := index - 1
+	if after := strings.TrimSpace(step.After); after != "" {
+		dependency = stepIndexByID[after]
+	}
+	return b.orderedStepCTE(name, index, dependency, step.WithinSeconds, join, where), nil
+}
+
+func (b *funnelQueryBuilder) unorderedStepCTE(name string, index int, join string, where string) string {
+	var sql strings.Builder
+	sql.WriteString(name)
+	sql.WriteString(" AS (SELECT DISTINCT e.player_id FROM events e")
+	if index > 0 {
+		sql.WriteString(" JOIN ")
+		sql.WriteString(funnelStepCTEName(index - 1))
+		sql.WriteString(" prev ON prev.player_id = e.player_id")
+	}
+	sql.WriteString(join)
+	sql.WriteString(where)
+	sql.WriteString(")")
+	return sql.String()
+}
+
+func (b *funnelQueryBuilder) orderedStepCTE(name string, index int, dependency int, withinSeconds *int64, join string, where string) string {
+	var sql strings.Builder
+	sql.WriteString(name)
+	sql.WriteString(" AS (SELECT DISTINCT ON (e.player_id) e.player_id, e.game_time AS first_game_time, e.real_ts AS first_real_ts FROM events e")
+	if index > 0 {
+		sql.WriteString(" JOIN ")
+		sql.WriteString(funnelStepCTEName(dependency))
+		sql.WriteString(" prev ON prev.player_id = e.player_id")
+	}
+	sql.WriteString(join)
+	sql.WriteString(where)
+	if index > 0 {
+		sql.WriteString(" AND e.game_time >= prev.first_game_time")
+		if withinSeconds != nil {
+			sql.WriteString(" AND e.real_ts >= prev.first_real_ts")
+			sql.WriteString(" AND e.real_ts <= prev.first_real_ts + (")
+			sql.WriteString(b.addArg(*withinSeconds))
+			sql.WriteString("::bigint * interval '1 second')")
+		}
+	}
+	sql.WriteString(" ORDER BY e.player_id, e.game_time ASC, e.real_ts ASC)")
+	return sql.String()
+}
+
+func (b *funnelQueryBuilder) funnelMatcherSQL(match FunnelEventMatcher, fields map[string]QueryFieldDefinition) (string, string, error) {
+	var join strings.Builder
+	var where strings.Builder
+	where.WriteString(" WHERE e.project_id = $1 AND e.real_ts >= $2 AND e.real_ts <= $3")
+
+	if eventType := strings.TrimSpace(match.EventType); eventType != "" {
+		where.WriteString(" AND e.event_type = ")
+		where.WriteString(b.addArg(eventType))
+	}
+	if eventTypes := trimmedStrings(match.EventTypes); len(eventTypes) > 0 {
+		where.WriteString(" AND e.event_type = ANY(")
+		where.WriteString(b.addArg(eventTypes))
+		where.WriteString("::text[])")
+	}
+	if regionID := strings.TrimSpace(match.RegionID); regionID != "" {
+		where.WriteString(" AND e.region_id = ")
+		where.WriteString(b.addArg(regionID))
+	}
+	if zoneID := strings.TrimSpace(match.ZoneID); zoneID != "" {
+		where.WriteString(" AND e.zone_id = ")
+		where.WriteString(b.addArg(zoneID))
+	}
+	if fieldKey := strings.TrimSpace(match.FieldKey); fieldKey != "" {
+		field, ok := fields[fieldKey]
+		if !ok {
+			return "", "", fmt.Errorf("%w: unknown funnel field_key", ErrBadRequest)
+		}
+		if !field.Filterable {
+			return "", "", fmt.Errorf("%w: funnel field_key must be filterable", ErrBadRequest)
+		}
+		join.WriteString(" JOIN event_fields ef ON ef.event_id = e.id AND ef.project_id = e.project_id")
+		join.WriteString(" AND ef.field_key = ")
+		join.WriteString(b.addArg(fieldKey))
+		join.WriteString(" AND ef.value_type = ")
+		join.WriteString(b.addArg(field.Type))
+		fieldValue, hasFieldValue, err := funnelFieldValue(field.Type, match.FieldValue)
+		if err != nil {
+			return "", "", err
+		}
+		if hasFieldValue {
+			switch field.Type {
+			case "string":
+				join.WriteString(" AND ef.string_value = ")
+			case "number":
+				join.WriteString(" AND ef.number_value = ")
+			case "bool":
+				join.WriteString(" AND ef.bool_value = ")
+			default:
+				return "", "", fmt.Errorf("%w: unsupported funnel field type", ErrBadRequest)
+			}
+			join.WriteString(b.addArg(fieldValue))
+		}
+	}
+	return join.String(), where.String(), nil
+}
+
+func funnelStepCTEName(index int) string {
+	return "step_" + strconv.Itoa(index+1)
+}
+
+func funnelSummary(def FunnelDefinition, counts []int64) FunnelSummary {
+	var started int64
+	var completed int64
+	if len(counts) > 0 {
+		started = counts[0]
+		completed = counts[len(counts)-1]
+	}
+	rate := 0.0
+	if started > 0 {
+		rate = float64(completed) / float64(started)
+	}
+	dropoff := "none"
+	if started > completed {
+		dropoff = fmt.Sprintf("%d players", started-completed)
+	}
+	steps := make([]FunnelStepSummary, 0, len(def.Steps))
+	for i, step := range def.Steps {
+		count := counts[i]
+		stepRate := 0.0
+		if started > 0 {
+			stepRate = float64(count) / float64(started)
+		}
+		steps = append(steps, FunnelStepSummary{
+			ID:    strings.TrimSpace(step.ID),
+			Label: strings.TrimSpace(step.Label),
+			Count: count,
+			Rate:  stepRate,
+		})
+	}
+	return FunnelSummary{
+		ID:          strings.TrimSpace(def.ID),
+		Name:        strings.TrimSpace(def.Name),
+		Description: strings.TrimSpace(def.Description),
+		Entity:      "player",
+		Started:     started,
+		Completed:   completed,
+		Rate:        rate,
+		Dropoff:     dropoff,
+		Steps:       steps,
+	}
+}
+
+func funnelFieldValue(valueType string, raw json.RawMessage) (any, bool, error) {
+	if !hasRawJSONValue(raw) {
+		return nil, false, nil
+	}
+	switch strings.TrimSpace(valueType) {
+	case "string":
+		var value string
+		if err := json.Unmarshal(raw, &value); err != nil {
+			return nil, false, fmt.Errorf("%w: funnel field_value must be a string", ErrBadRequest)
+		}
+		return value, true, nil
+	case "number":
+		var value float64
+		if err := json.Unmarshal(raw, &value); err != nil {
+			return nil, false, fmt.Errorf("%w: funnel field_value must be a number", ErrBadRequest)
+		}
+		return value, true, nil
+	case "bool":
+		var value bool
+		if err := json.Unmarshal(raw, &value); err != nil {
+			return nil, false, fmt.Errorf("%w: funnel field_value must be a boolean", ErrBadRequest)
+		}
+		return value, true, nil
+	default:
+		return nil, false, fmt.Errorf("%w: unsupported funnel field type", ErrBadRequest)
+	}
+}
+
+func hasRawJSONValue(raw json.RawMessage) bool {
+	trimmed := strings.TrimSpace(string(raw))
+	return trimmed != "" && trimmed != "null"
+}
+
+func funnelMode(def FunnelDefinition) string {
+	mode := strings.TrimSpace(def.Mode)
+	if mode == "" {
+		return "ordered"
+	}
+	return mode
+}
+
+func trimmedStrings(values []string) []string {
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		trimmed := strings.TrimSpace(value)
+		if trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	return out
+}
+
 const defaultIngestConfigJSON = `{
   "max_events_per_batch": 50,
   "accept_gzip": true,
@@ -1146,6 +1602,8 @@ const defaultEventGroupsJSON = `{
 
 const defaultQueryFieldsJSON = `[]`
 
+const defaultFunnelsJSON = `[]`
+
 func newIngestToken() (string, string, error) {
 	var raw [32]byte
 	if _, err := rand.Read(raw[:]); err != nil {
@@ -1172,26 +1630,6 @@ func optionalTime(value pgtype.Timestamptz) string {
 		return ""
 	}
 	return formatTime(value.Time)
-}
-
-func funnel(id string, name string, description string, started int64, completed int64) FunnelSummary {
-	rate := 0.0
-	if started > 0 {
-		rate = float64(completed) / float64(started)
-	}
-	dropoff := "none"
-	if started > completed {
-		dropoff = "incomplete"
-	}
-	return FunnelSummary{
-		ID:          id,
-		Name:        name,
-		Description: description,
-		Started:     started,
-		Completed:   completed,
-		Rate:        rate,
-		Dropoff:     dropoff,
-	}
 }
 
 func validReportStatus(status string) bool {

@@ -389,41 +389,6 @@ INSERT INTO report_notes (
 )
 RETURNING id, note, created_at;
 
--- name: AdminFunnelCounts :one
-WITH player_flags AS (
-    SELECT
-        player_id,
-        bool_or(event_type = 'game_continue') AS continued,
-        bool_or(event_type = 'undock') AS undocked,
-        bool_or(event_type = 'dock') AS docked,
-        bool_or(event_type = 'buy_commodity') AS bought_commodity,
-        bool_or(event_type = 'sell_commodity') AS sold_commodity,
-        bool_or(event_type = 'take_mission') AS took_mission,
-        bool_or(event_type = 'complete_mission') AS completed_mission,
-        bool_or(event_type = 'combat_start') AS started_combat,
-        bool_or(event_type = 'player_death') AS died,
-        bool_or(event_type = 'bug_report') AS reported
-    FROM events
-    WHERE project_id = $1
-      AND real_ts >= $2
-      AND real_ts <= $3
-    GROUP BY player_id
-)
-SELECT
-    count(*) FILTER (WHERE continued)::bigint AS onboarding_started,
-    count(*) FILTER (WHERE continued AND undocked AND docked)::bigint AS onboarding_completed,
-    count(*) FILTER (WHERE bought_commodity)::bigint AS trade_started,
-    count(*) FILTER (WHERE bought_commodity AND sold_commodity)::bigint AS trade_completed,
-    count(*) FILTER (WHERE took_mission)::bigint AS mission_started,
-    count(*) FILTER (WHERE took_mission AND completed_mission)::bigint AS mission_completed,
-    count(*) FILTER (WHERE started_combat)::bigint AS combat_started,
-    count(*) FILTER (WHERE started_combat AND NOT died)::bigint AS combat_completed,
-    count(*) FILTER (WHERE undocked)::bigint AS station_return_started,
-    count(*) FILTER (WHERE undocked AND docked)::bigint AS station_return_completed,
-    count(*) FILTER (WHERE reported)::bigint AS report_started,
-    count(*) FILTER (WHERE reported)::bigint AS report_completed
-FROM player_flags;
-
 -- name: AdminEventTypes :many
 SELECT
     event_type,
@@ -453,7 +418,8 @@ SELECT
     map_config,
     report_config,
     event_groups,
-    query_fields
+    query_fields,
+    funnels
 FROM projects
 WHERE project_key = $1;
 
@@ -477,9 +443,10 @@ INSERT INTO projects (
     map_config,
     report_config,
     event_groups,
-    query_fields
+    query_fields,
+    funnels
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
 )
 ON CONFLICT (project_key) DO UPDATE
 SET display_name = EXCLUDED.display_name,
@@ -490,6 +457,7 @@ SET display_name = EXCLUDED.display_name,
     report_config = EXCLUDED.report_config,
     event_groups = EXCLUDED.event_groups,
     query_fields = EXCLUDED.query_fields,
+    funnels = EXCLUDED.funnels,
     updated_at = now()
 RETURNING
     id,
@@ -501,7 +469,8 @@ RETURNING
     map_config,
     report_config,
     event_groups,
-    query_fields;
+    query_fields,
+    funnels;
 
 -- name: AdminListIngestTokens :many
 SELECT

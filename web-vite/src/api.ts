@@ -139,14 +139,50 @@ export interface QueryField {
   aggregations: string[];
 }
 
+export interface EventMatcher {
+  event_type?: string;
+  event_types?: string[];
+  field_key?: string;
+  field_value?: string | number | boolean;
+  region_id?: string;
+  zone_id?: string;
+}
+
+export interface FunnelStep {
+  id: string;
+  label: string;
+  match: EventMatcher;
+  after?: string;
+  within_seconds?: number;
+}
+
+export interface FunnelDefinition {
+  id: string;
+  name: string;
+  description?: string;
+  entity: "player";
+  mode?: "ordered" | "unordered_presence";
+  enabled?: boolean;
+  steps: FunnelStep[];
+}
+
+export interface FunnelStepSummary {
+  id: string;
+  label: string;
+  count: number;
+  rate: number;
+}
+
 export interface FunnelSummary {
   id: string;
   name: string;
   description: string;
+  entity: string;
   started: number;
   completed: number;
   rate: number;
   dropoff: string;
+  steps: FunnelStepSummary[];
 }
 
 export interface AdminFilters {
@@ -192,6 +228,7 @@ export interface SettingsResponse {
     report_config: Record<string, unknown>;
     event_groups: Record<string, unknown>;
     query_fields: QueryField[];
+    funnels: FunnelDefinition[];
   };
   tokens: IngestTokenSummary[];
 }
@@ -214,6 +251,7 @@ export interface CreateProjectRequest {
   report_config: Record<string, unknown>;
   event_groups: Record<string, string[]>;
   query_fields: QueryField[];
+  funnels: FunnelDefinition[];
 }
 
 export interface CreateIngestTokenResponse {

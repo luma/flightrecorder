@@ -212,3 +212,10 @@ The admin API powers the future Vite dashboard. It returns JSON only.
 Configured field filters use `field_key` and optional `field_value` query
 parameters. `field_key` must match a project `query_fields` entry. `field_value`
 is compared against the projected string value, number value, or bool value.
+
+`GET /api/admin/v1/funnels` evaluates the active project's configured
+`funnels`. Each result includes the existing summary fields (`started`,
+`completed`, `rate`, and `dropoff`) plus `steps`, an ordered list of per-step
+counts and rates. Project settings responses include the raw `funnels`
+configuration so the dashboard can display and edit project-specific funnel
+definitions.

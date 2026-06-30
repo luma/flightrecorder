@@ -106,6 +106,7 @@ type Project struct {
 	ReportConfig    json.RawMessage `json:"report_config"`
 	EventGroups     json.RawMessage `json:"event_groups"`
 	QueryFields     json.RawMessage `json:"query_fields"`
+	Funnels         json.RawMessage `json:"funnels"`
 	CreatedAt       time.Time       `json:"created_at"`
 	UpdatedAt       time.Time       `json:"updated_at"`
 }

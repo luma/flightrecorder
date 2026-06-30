@@ -14,7 +14,6 @@ type Querier interface {
 	AdminCreateIngestToken(ctx context.Context, arg AdminCreateIngestTokenParams) (AdminCreateIngestTokenRow, error)
 	AdminCreateReportNote(ctx context.Context, arg AdminCreateReportNoteParams) (AdminCreateReportNoteRow, error)
 	AdminEventTypes(ctx context.Context, projectID uuid.UUID) ([]AdminEventTypesRow, error)
-	AdminFunnelCounts(ctx context.Context, arg AdminFunnelCountsParams) (AdminFunnelCountsRow, error)
 	AdminGetReport(ctx context.Context, arg AdminGetReportParams) (AdminGetReportRow, error)
 	AdminListEvents(ctx context.Context, arg AdminListEventsParams) ([]AdminListEventsRow, error)
 	AdminListEventsByField(ctx context.Context, arg AdminListEventsByFieldParams) ([]AdminListEventsByFieldRow, error)

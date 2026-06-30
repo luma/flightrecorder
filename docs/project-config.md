@@ -58,6 +58,19 @@ The first project config is `examples/sursidus.project.json`.
       "filterable": true,
       "aggregations": ["count"]
     }
+  ],
+  "funnels": [
+    {
+      "id": "first_trade_loop",
+      "name": "First trade loop",
+      "description": "buy commodity -> sell commodity",
+      "entity": "player",
+      "mode": "ordered",
+      "steps": [
+        { "id": "bought", "label": "Bought commodity", "match": { "event_type": "buy_commodity" } },
+        { "id": "sold", "label": "Sold commodity", "match": { "event_type": "sell_commodity" }, "after": "bought" }
+      ]
+    }
   ]
 }
 ```
@@ -84,12 +97,20 @@ The first project config is `examples/sursidus.project.json`.
 | `reports.rate_limit_seconds` | Client/report anti-spam window. |
 | `event_groups` | UI grouping metadata for filters and schema screens. |
 | `query_fields` | Project-declared field projections. Each field has `key`, `source`, `type`, `label`, `filterable`, and `aggregations`. |
+| `funnels` | Project-declared funnel definitions. Each funnel has `id`, `name`, `entity`, `mode`, and one or more `steps`. |
 
 `query_fields.source` starts with one of `context`, `metrics`, `dimensions`, or
 `payload`. The collector first checks for an exact key after the root, such as
 `metrics.ship.hull_pct` reading `{ "ship.hull_pct": 0.94 }`, then falls back to
 nested object traversal. This supports compact dotted metric keys and ordinary
 nested JSON.
+
+`funnels.mode` may be `ordered` or `unordered_presence`. Ordered funnels count
+players who reach steps in sequence, using `game_time` for ordering.
+`unordered_presence` funnels count cumulative step presence in the selected time
+window without requiring ordering; step N counts players that matched every step
+through N. Funnel field matchers can use `field_key` only for `query_fields`
+entries marked `filterable: true`.
 
 ## Initial Sursidus Policy
 

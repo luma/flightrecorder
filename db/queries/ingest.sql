@@ -1,5 +1,5 @@
 -- name: GetProjectByKey :one
-SELECT id, project_key, display_name, validation_mode, query_fields
+SELECT id, project_key, display_name, validation_mode, query_fields, funnels
 FROM projects
 WHERE project_key = $1;
 

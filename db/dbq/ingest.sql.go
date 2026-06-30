@@ -275,7 +275,7 @@ func (q *Queries) GetBatchByProjectAndBatchID(ctx context.Context, arg GetBatchB
 }
 
 const getProjectByKey = `-- name: GetProjectByKey :one
-SELECT id, project_key, display_name, validation_mode, query_fields
+SELECT id, project_key, display_name, validation_mode, query_fields, funnels
 FROM projects
 WHERE project_key = $1
 `
@@ -286,6 +286,7 @@ type GetProjectByKeyRow struct {
 	DisplayName    string          `json:"display_name"`
 	ValidationMode string          `json:"validation_mode"`
 	QueryFields    json.RawMessage `json:"query_fields"`
+	Funnels        json.RawMessage `json:"funnels"`
 }
 
 func (q *Queries) GetProjectByKey(ctx context.Context, projectKey string) (GetProjectByKeyRow, error) {
@@ -297,6 +298,7 @@ func (q *Queries) GetProjectByKey(ctx context.Context, projectKey string) (GetPr
 		&i.DisplayName,
 		&i.ValidationMode,
 		&i.QueryFields,
+		&i.Funnels,
 	)
 	return i, err
 }

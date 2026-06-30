@@ -23,6 +23,7 @@ CREATE TABLE projects (
     report_config jsonb NOT NULL DEFAULT '{}'::jsonb,
     event_groups jsonb NOT NULL DEFAULT '{}'::jsonb,
     query_fields jsonb NOT NULL DEFAULT '[]'::jsonb,
+    funnels jsonb NOT NULL DEFAULT '[]'::jsonb,
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now()
 );

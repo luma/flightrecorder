@@ -454,7 +454,7 @@ function HeatmapTable({ cells, onSelect }: { cells: HeatmapCell[]; onSelect: (ce
 function FunnelsTable({ funnels }: { funnels: FunnelSummary[] }) {
   return (
     <Table
-      headers={["Name", "Description", "Started", "Completed", "Rate", "Drop-off"]}
+      headers={["Name", "Description", "Started", "Completed", "Rate", "Drop-off", "Steps"]}
       rows={funnels.map((funnel) => [
         funnel.name,
         funnel.description,
@@ -462,6 +462,7 @@ function FunnelsTable({ funnels }: { funnels: FunnelSummary[] }) {
         String(funnel.completed),
         `${Math.round(funnel.rate * 100)}%`,
         funnel.dropoff,
+        (funnel.steps ?? []).map((step) => `${step.label}: ${step.count}`).join(", "),
       ])}
     />
   );
