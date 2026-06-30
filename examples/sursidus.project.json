@@ -14,7 +14,7 @@
     "access_log_days": 14
   },
   "maps": {
-    "systems_overlay": "configs/sursidus/systems-map.json",
+    "spatial_enabled": true,
     "zone_extent_m": 30000,
     "zone_heatmap_cell_m": 300
   },

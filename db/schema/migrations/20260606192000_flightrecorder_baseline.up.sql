@@ -84,7 +84,7 @@ CREATE TABLE events (
     event_type text NOT NULL,
     real_ts timestamptz NOT NULL,
     game_time bigint NOT NULL,
-    system_id text NOT NULL,
+    region_id text NOT NULL,
     zone_id text NOT NULL,
     coord_x double precision NOT NULL,
     coord_y double precision NOT NULL,
@@ -116,14 +116,14 @@ ON events(project_id, player_id, game_time ASC);
 CREATE INDEX events_project_player_real_ts_idx
 ON events(project_id, player_id, real_ts DESC);
 
-CREATE INDEX events_project_system_zone_idx
-ON events(project_id, system_id, zone_id);
+CREATE INDEX events_project_region_zone_idx
+ON events(project_id, region_id, zone_id);
 
-CREATE INDEX events_project_system_time_idx
-ON events(project_id, system_id, real_ts DESC);
+CREATE INDEX events_project_region_time_idx
+ON events(project_id, region_id, real_ts DESC);
 
-CREATE INDEX events_project_system_zone_time_idx
-ON events(project_id, system_id, zone_id, real_ts DESC);
+CREATE INDEX events_project_region_zone_time_idx
+ON events(project_id, region_id, zone_id, real_ts DESC);
 
 -- Project-defined query fields are projected from event JSON into typed columns.
 -- This keeps the schema flexible for different games while giving the admin UI

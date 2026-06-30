@@ -53,7 +53,7 @@ export interface EventSummary {
   event_type: string;
   real_ts: string;
   game_time: number;
-  system_id: string;
+  region_id: string;
   zone_id: string;
   coordinates: number[];
   game_version: string;
@@ -73,7 +73,7 @@ export interface TraceEvent {
   event_type: string;
   real_ts: string;
   game_time: number;
-  system_id: string;
+  region_id: string;
   zone_id: string;
   coordinates: number[];
   context: Record<string, unknown>;
@@ -93,7 +93,7 @@ export interface ReportSummary {
   screenshot_object_key?: string;
   created_at: string;
   player_id: string;
-  system_id: string;
+  region_id: string;
   zone_id: string;
   context?: Record<string, unknown>;
   metrics?: Record<string, unknown>;
@@ -115,7 +115,7 @@ export interface ReportDetail extends ReportSummary {
 }
 
 export interface HeatmapCell {
-  system_id: string;
+  region_id: string;
   zone_id?: string;
   grid_x?: number;
   grid_z?: number;
@@ -154,7 +154,7 @@ export interface AdminFilters {
   from?: string;
   to?: string;
   event_type?: string;
-  system_id?: string;
+  region_id?: string;
   zone_id?: string;
   player_id?: string;
   game_version?: string;
@@ -236,8 +236,8 @@ export const api = {
     apiFetch<{ events: TraceEvent[] }>(
       `/players/${encodeURIComponent(playerID)}/trace?project_id=${encodeURIComponent(projectID)}&limit=100`,
     ),
-  systemHeatmap: (filters: AdminFilters) =>
-    apiFetch<{ cells: HeatmapCell[] }>(`/heatmap/systems${queryString(filters)}`),
+  regionHeatmap: (filters: AdminFilters) =>
+    apiFetch<{ cells: HeatmapCell[] }>(`/heatmap/regions${queryString(filters)}`),
   zoneHeatmap: (filters: AdminFilters) =>
     apiFetch<{ cells: HeatmapCell[] }>(`/heatmap/zones${queryString(filters)}`),
   funnels: (filters: AdminFilters) => apiFetch<{ funnels: FunnelSummary[] }>(`/funnels${queryString(filters)}`),

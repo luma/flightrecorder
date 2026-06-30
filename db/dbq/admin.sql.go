@@ -225,7 +225,7 @@ SELECT
     e.player_id,
     e.real_ts,
     e.game_time,
-    e.system_id,
+    e.region_id,
     e.zone_id,
     e.coord_x,
     e.coord_y,
@@ -259,7 +259,7 @@ type AdminGetReportRow struct {
 	PlayerID               uuid.UUID       `json:"player_id"`
 	RealTs                 time.Time       `json:"real_ts"`
 	GameTime               int64           `json:"game_time"`
-	SystemID               string          `json:"system_id"`
+	RegionID               string          `json:"region_id"`
 	ZoneID                 string          `json:"zone_id"`
 	CoordX                 float64         `json:"coord_x"`
 	CoordY                 float64         `json:"coord_y"`
@@ -287,7 +287,7 @@ func (q *Queries) AdminGetReport(ctx context.Context, arg AdminGetReportParams) 
 		&i.PlayerID,
 		&i.RealTs,
 		&i.GameTime,
-		&i.SystemID,
+		&i.RegionID,
 		&i.ZoneID,
 		&i.CoordX,
 		&i.CoordY,
@@ -307,7 +307,7 @@ SELECT
     event_type,
     real_ts,
     game_time,
-    system_id,
+    region_id,
     zone_id,
     coord_x,
     coord_y,
@@ -340,7 +340,7 @@ SELECT
 FROM events
 WHERE events.project_id = $1
   AND ($6::text IS NULL OR event_type = $6)
-  AND ($7::text IS NULL OR system_id = $7)
+  AND ($7::text IS NULL OR region_id = $7)
   AND ($8::text IS NULL OR zone_id = $8)
   AND ($9::uuid IS NULL OR player_id = $9::uuid)
   AND ($10::text IS NULL OR game_version = $10)
@@ -359,7 +359,7 @@ type AdminListEventsParams struct {
 	Limit        int32       `json:"limit"`
 	Offset       int32       `json:"offset"`
 	EventType    pgtype.Text `json:"event_type"`
-	SystemID     pgtype.Text `json:"system_id"`
+	RegionID     pgtype.Text `json:"region_id"`
 	ZoneID       pgtype.Text `json:"zone_id"`
 	PlayerID     pgtype.UUID `json:"player_id"`
 	GameVersion  pgtype.Text `json:"game_version"`
@@ -372,7 +372,7 @@ type AdminListEventsRow struct {
 	EventType        string          `json:"event_type"`
 	RealTs           time.Time       `json:"real_ts"`
 	GameTime         int64           `json:"game_time"`
-	SystemID         string          `json:"system_id"`
+	RegionID         string          `json:"region_id"`
 	ZoneID           string          `json:"zone_id"`
 	CoordX           float64         `json:"coord_x"`
 	CoordY           float64         `json:"coord_y"`
@@ -398,7 +398,7 @@ func (q *Queries) AdminListEvents(ctx context.Context, arg AdminListEventsParams
 		arg.Limit,
 		arg.Offset,
 		arg.EventType,
-		arg.SystemID,
+		arg.RegionID,
 		arg.ZoneID,
 		arg.PlayerID,
 		arg.GameVersion,
@@ -417,7 +417,7 @@ func (q *Queries) AdminListEvents(ctx context.Context, arg AdminListEventsParams
 			&i.EventType,
 			&i.RealTs,
 			&i.GameTime,
-			&i.SystemID,
+			&i.RegionID,
 			&i.ZoneID,
 			&i.CoordX,
 			&i.CoordY,
@@ -451,7 +451,7 @@ SELECT
     event_type,
     real_ts,
     game_time,
-    system_id,
+    region_id,
     zone_id,
     coord_x,
     coord_y,
@@ -494,7 +494,7 @@ WHERE filter_field.project_id = $1
   )
   AND events.project_id = $1
   AND ($12::text IS NULL OR event_type = $12)
-  AND ($13::text IS NULL OR system_id = $13)
+  AND ($13::text IS NULL OR region_id = $13)
   AND ($14::text IS NULL OR zone_id = $14)
   AND ($15::uuid IS NULL OR player_id = $15::uuid)
   AND ($16::text IS NULL OR game_version = $16)
@@ -519,7 +519,7 @@ type AdminListEventsByFieldParams struct {
 	FieldNumberValue float64     `json:"field_number_value"`
 	FieldBoolValue   bool        `json:"field_bool_value"`
 	EventType        pgtype.Text `json:"event_type"`
-	SystemID         pgtype.Text `json:"system_id"`
+	RegionID         pgtype.Text `json:"region_id"`
 	ZoneID           pgtype.Text `json:"zone_id"`
 	PlayerID         pgtype.UUID `json:"player_id"`
 	GameVersion      pgtype.Text `json:"game_version"`
@@ -532,7 +532,7 @@ type AdminListEventsByFieldRow struct {
 	EventType        string          `json:"event_type"`
 	RealTs           time.Time       `json:"real_ts"`
 	GameTime         int64           `json:"game_time"`
-	SystemID         string          `json:"system_id"`
+	RegionID         string          `json:"region_id"`
 	ZoneID           string          `json:"zone_id"`
 	CoordX           float64         `json:"coord_x"`
 	CoordY           float64         `json:"coord_y"`
@@ -564,7 +564,7 @@ func (q *Queries) AdminListEventsByField(ctx context.Context, arg AdminListEvent
 		arg.FieldNumberValue,
 		arg.FieldBoolValue,
 		arg.EventType,
-		arg.SystemID,
+		arg.RegionID,
 		arg.ZoneID,
 		arg.PlayerID,
 		arg.GameVersion,
@@ -583,7 +583,7 @@ func (q *Queries) AdminListEventsByField(ctx context.Context, arg AdminListEvent
 			&i.EventType,
 			&i.RealTs,
 			&i.GameTime,
-			&i.SystemID,
+			&i.RegionID,
 			&i.ZoneID,
 			&i.CoordX,
 			&i.CoordY,
@@ -754,7 +754,7 @@ SELECT
     e.player_id,
     e.real_ts,
     e.game_time,
-    e.system_id,
+    e.region_id,
     e.zone_id,
     e.context,
     e.metrics,
@@ -789,7 +789,7 @@ type AdminListReportsRow struct {
 	PlayerID            uuid.UUID       `json:"player_id"`
 	RealTs              time.Time       `json:"real_ts"`
 	GameTime            int64           `json:"game_time"`
-	SystemID            string          `json:"system_id"`
+	RegionID            string          `json:"region_id"`
 	ZoneID              string          `json:"zone_id"`
 	Context             json.RawMessage `json:"context"`
 	Metrics             json.RawMessage `json:"metrics"`
@@ -824,7 +824,7 @@ func (q *Queries) AdminListReports(ctx context.Context, arg AdminListReportsPara
 			&i.PlayerID,
 			&i.RealTs,
 			&i.GameTime,
-			&i.SystemID,
+			&i.RegionID,
 			&i.ZoneID,
 			&i.Context,
 			&i.Metrics,
@@ -855,7 +855,7 @@ SELECT
     e.player_id,
     e.real_ts,
     e.game_time,
-    e.system_id,
+    e.region_id,
     e.zone_id,
     e.context,
     e.metrics,
@@ -892,7 +892,7 @@ type AdminListReportsByLabelRow struct {
 	PlayerID            uuid.UUID       `json:"player_id"`
 	RealTs              time.Time       `json:"real_ts"`
 	GameTime            int64           `json:"game_time"`
-	SystemID            string          `json:"system_id"`
+	RegionID            string          `json:"region_id"`
 	ZoneID              string          `json:"zone_id"`
 	Context             json.RawMessage `json:"context"`
 	Metrics             json.RawMessage `json:"metrics"`
@@ -928,7 +928,7 @@ func (q *Queries) AdminListReportsByLabel(ctx context.Context, arg AdminListRepo
 			&i.PlayerID,
 			&i.RealTs,
 			&i.GameTime,
-			&i.SystemID,
+			&i.RegionID,
 			&i.ZoneID,
 			&i.Context,
 			&i.Metrics,
@@ -951,7 +951,7 @@ SELECT
     event_type,
     real_ts,
     game_time,
-    system_id,
+    region_id,
     zone_id,
     coord_x,
     coord_y,
@@ -993,7 +993,7 @@ type AdminPlayerTraceRow struct {
 	EventType  string          `json:"event_type"`
 	RealTs     time.Time       `json:"real_ts"`
 	GameTime   int64           `json:"game_time"`
-	SystemID   string          `json:"system_id"`
+	RegionID   string          `json:"region_id"`
 	ZoneID     string          `json:"zone_id"`
 	CoordX     float64         `json:"coord_x"`
 	CoordY     float64         `json:"coord_y"`
@@ -1019,7 +1019,7 @@ func (q *Queries) AdminPlayerTrace(ctx context.Context, arg AdminPlayerTracePara
 			&i.EventType,
 			&i.RealTs,
 			&i.GameTime,
-			&i.SystemID,
+			&i.RegionID,
 			&i.ZoneID,
 			&i.CoordX,
 			&i.CoordY,
@@ -1087,13 +1087,151 @@ func (q *Queries) AdminProjectSettings(ctx context.Context, projectKey string) (
 	return i, err
 }
 
+const adminRegionHeatmap = `-- name: AdminRegionHeatmap :many
+SELECT
+    region_id,
+    event_type,
+    count(*)::bigint AS event_count
+FROM events
+WHERE events.project_id = $1
+  AND real_ts >= $2
+  AND real_ts <= $3
+  AND ($4::text IS NULL OR event_type = $4)
+  AND ($5::text IS NULL OR game_version = $5)
+  AND ($6::text IS NULL OR build_channel = $6)
+GROUP BY region_id, event_type
+ORDER BY event_count DESC
+`
+
+type AdminRegionHeatmapParams struct {
+	ProjectID    uuid.UUID   `json:"project_id"`
+	RealTs       time.Time   `json:"real_ts"`
+	RealTs_2     time.Time   `json:"real_ts_2"`
+	EventType    pgtype.Text `json:"event_type"`
+	GameVersion  pgtype.Text `json:"game_version"`
+	BuildChannel pgtype.Text `json:"build_channel"`
+}
+
+type AdminRegionHeatmapRow struct {
+	RegionID   string `json:"region_id"`
+	EventType  string `json:"event_type"`
+	EventCount int64  `json:"event_count"`
+}
+
+func (q *Queries) AdminRegionHeatmap(ctx context.Context, arg AdminRegionHeatmapParams) ([]AdminRegionHeatmapRow, error) {
+	rows, err := q.db.Query(ctx, adminRegionHeatmap,
+		arg.ProjectID,
+		arg.RealTs,
+		arg.RealTs_2,
+		arg.EventType,
+		arg.GameVersion,
+		arg.BuildChannel,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AdminRegionHeatmapRow{}
+	for rows.Next() {
+		var i AdminRegionHeatmapRow
+		if err := rows.Scan(&i.RegionID, &i.EventType, &i.EventCount); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const adminRegionHeatmapByField = `-- name: AdminRegionHeatmapByField :many
+SELECT
+    region_id,
+    event_type,
+    count(*)::bigint AS event_count
+FROM event_fields filter_field
+JOIN events ON events.id = filter_field.event_id
+WHERE filter_field.project_id = $1
+  AND filter_field.field_key = $4
+  AND filter_field.value_type = $5
+  AND (
+      NOT $6::bool
+      OR (filter_field.value_type = 'string' AND filter_field.string_value = $7::text)
+      OR (filter_field.value_type = 'number' AND filter_field.number_value = $8::double precision)
+      OR (filter_field.value_type = 'bool' AND filter_field.bool_value = $9::boolean)
+  )
+  AND events.project_id = $1
+  AND real_ts >= $2
+  AND real_ts <= $3
+  AND ($10::text IS NULL OR event_type = $10)
+  AND ($11::text IS NULL OR game_version = $11)
+  AND ($12::text IS NULL OR build_channel = $12)
+GROUP BY region_id, event_type
+ORDER BY event_count DESC
+`
+
+type AdminRegionHeatmapByFieldParams struct {
+	ProjectID        uuid.UUID   `json:"project_id"`
+	RealTs           time.Time   `json:"real_ts"`
+	RealTs_2         time.Time   `json:"real_ts_2"`
+	FieldKey         string      `json:"field_key"`
+	FieldValueType   string      `json:"field_value_type"`
+	HasFieldValue    bool        `json:"has_field_value"`
+	FieldStringValue string      `json:"field_string_value"`
+	FieldNumberValue float64     `json:"field_number_value"`
+	FieldBoolValue   bool        `json:"field_bool_value"`
+	EventType        pgtype.Text `json:"event_type"`
+	GameVersion      pgtype.Text `json:"game_version"`
+	BuildChannel     pgtype.Text `json:"build_channel"`
+}
+
+type AdminRegionHeatmapByFieldRow struct {
+	RegionID   string `json:"region_id"`
+	EventType  string `json:"event_type"`
+	EventCount int64  `json:"event_count"`
+}
+
+func (q *Queries) AdminRegionHeatmapByField(ctx context.Context, arg AdminRegionHeatmapByFieldParams) ([]AdminRegionHeatmapByFieldRow, error) {
+	rows, err := q.db.Query(ctx, adminRegionHeatmapByField,
+		arg.ProjectID,
+		arg.RealTs,
+		arg.RealTs_2,
+		arg.FieldKey,
+		arg.FieldValueType,
+		arg.HasFieldValue,
+		arg.FieldStringValue,
+		arg.FieldNumberValue,
+		arg.FieldBoolValue,
+		arg.EventType,
+		arg.GameVersion,
+		arg.BuildChannel,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AdminRegionHeatmapByFieldRow{}
+	for rows.Next() {
+		var i AdminRegionHeatmapByFieldRow
+		if err := rows.Scan(&i.RegionID, &i.EventType, &i.EventCount); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const adminReportTrace = `-- name: AdminReportTrace :many
 SELECT
     e.id,
     e.event_type,
     e.real_ts,
     e.game_time,
-    e.system_id,
+    e.region_id,
     e.zone_id,
     e.context,
     e.metrics,
@@ -1121,7 +1259,7 @@ type AdminReportTraceRow struct {
 	EventType  string          `json:"event_type"`
 	RealTs     time.Time       `json:"real_ts"`
 	GameTime   int64           `json:"game_time"`
-	SystemID   string          `json:"system_id"`
+	RegionID   string          `json:"region_id"`
 	ZoneID     string          `json:"zone_id"`
 	Context    json.RawMessage `json:"context"`
 	Metrics    json.RawMessage `json:"metrics"`
@@ -1143,7 +1281,7 @@ func (q *Queries) AdminReportTrace(ctx context.Context, arg AdminReportTracePara
 			&i.EventType,
 			&i.RealTs,
 			&i.GameTime,
-			&i.SystemID,
+			&i.RegionID,
 			&i.ZoneID,
 			&i.Context,
 			&i.Metrics,
@@ -1241,144 +1379,6 @@ func (q *Queries) AdminSummary(ctx context.Context, arg AdminSummaryParams) (Adm
 		&i.ReportCount,
 	)
 	return i, err
-}
-
-const adminSystemHeatmap = `-- name: AdminSystemHeatmap :many
-SELECT
-    system_id,
-    event_type,
-    count(*)::bigint AS event_count
-FROM events
-WHERE events.project_id = $1
-  AND real_ts >= $2
-  AND real_ts <= $3
-  AND ($4::text IS NULL OR event_type = $4)
-  AND ($5::text IS NULL OR game_version = $5)
-  AND ($6::text IS NULL OR build_channel = $6)
-GROUP BY system_id, event_type
-ORDER BY event_count DESC
-`
-
-type AdminSystemHeatmapParams struct {
-	ProjectID    uuid.UUID   `json:"project_id"`
-	RealTs       time.Time   `json:"real_ts"`
-	RealTs_2     time.Time   `json:"real_ts_2"`
-	EventType    pgtype.Text `json:"event_type"`
-	GameVersion  pgtype.Text `json:"game_version"`
-	BuildChannel pgtype.Text `json:"build_channel"`
-}
-
-type AdminSystemHeatmapRow struct {
-	SystemID   string `json:"system_id"`
-	EventType  string `json:"event_type"`
-	EventCount int64  `json:"event_count"`
-}
-
-func (q *Queries) AdminSystemHeatmap(ctx context.Context, arg AdminSystemHeatmapParams) ([]AdminSystemHeatmapRow, error) {
-	rows, err := q.db.Query(ctx, adminSystemHeatmap,
-		arg.ProjectID,
-		arg.RealTs,
-		arg.RealTs_2,
-		arg.EventType,
-		arg.GameVersion,
-		arg.BuildChannel,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []AdminSystemHeatmapRow{}
-	for rows.Next() {
-		var i AdminSystemHeatmapRow
-		if err := rows.Scan(&i.SystemID, &i.EventType, &i.EventCount); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const adminSystemHeatmapByField = `-- name: AdminSystemHeatmapByField :many
-SELECT
-    system_id,
-    event_type,
-    count(*)::bigint AS event_count
-FROM event_fields filter_field
-JOIN events ON events.id = filter_field.event_id
-WHERE filter_field.project_id = $1
-  AND filter_field.field_key = $4
-  AND filter_field.value_type = $5
-  AND (
-      NOT $6::bool
-      OR (filter_field.value_type = 'string' AND filter_field.string_value = $7::text)
-      OR (filter_field.value_type = 'number' AND filter_field.number_value = $8::double precision)
-      OR (filter_field.value_type = 'bool' AND filter_field.bool_value = $9::boolean)
-  )
-  AND events.project_id = $1
-  AND real_ts >= $2
-  AND real_ts <= $3
-  AND ($10::text IS NULL OR event_type = $10)
-  AND ($11::text IS NULL OR game_version = $11)
-  AND ($12::text IS NULL OR build_channel = $12)
-GROUP BY system_id, event_type
-ORDER BY event_count DESC
-`
-
-type AdminSystemHeatmapByFieldParams struct {
-	ProjectID        uuid.UUID   `json:"project_id"`
-	RealTs           time.Time   `json:"real_ts"`
-	RealTs_2         time.Time   `json:"real_ts_2"`
-	FieldKey         string      `json:"field_key"`
-	FieldValueType   string      `json:"field_value_type"`
-	HasFieldValue    bool        `json:"has_field_value"`
-	FieldStringValue string      `json:"field_string_value"`
-	FieldNumberValue float64     `json:"field_number_value"`
-	FieldBoolValue   bool        `json:"field_bool_value"`
-	EventType        pgtype.Text `json:"event_type"`
-	GameVersion      pgtype.Text `json:"game_version"`
-	BuildChannel     pgtype.Text `json:"build_channel"`
-}
-
-type AdminSystemHeatmapByFieldRow struct {
-	SystemID   string `json:"system_id"`
-	EventType  string `json:"event_type"`
-	EventCount int64  `json:"event_count"`
-}
-
-func (q *Queries) AdminSystemHeatmapByField(ctx context.Context, arg AdminSystemHeatmapByFieldParams) ([]AdminSystemHeatmapByFieldRow, error) {
-	rows, err := q.db.Query(ctx, adminSystemHeatmapByField,
-		arg.ProjectID,
-		arg.RealTs,
-		arg.RealTs_2,
-		arg.FieldKey,
-		arg.FieldValueType,
-		arg.HasFieldValue,
-		arg.FieldStringValue,
-		arg.FieldNumberValue,
-		arg.FieldBoolValue,
-		arg.EventType,
-		arg.GameVersion,
-		arg.BuildChannel,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []AdminSystemHeatmapByFieldRow{}
-	for rows.Next() {
-		var i AdminSystemHeatmapByFieldRow
-		if err := rows.Scan(&i.SystemID, &i.EventType, &i.EventCount); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
 }
 
 const adminUpdateReport = `-- name: AdminUpdateReport :one
@@ -1516,7 +1516,7 @@ func (q *Queries) AdminUpsertProject(ctx context.Context, arg AdminUpsertProject
 
 const adminZoneHeatmap = `-- name: AdminZoneHeatmap :many
 SELECT
-    system_id,
+    region_id,
     zone_id,
     round(coord_x / $4)::bigint AS grid_x,
     round(coord_z / $4)::bigint AS grid_z,
@@ -1526,12 +1526,12 @@ FROM events
 WHERE events.project_id = $1
   AND real_ts >= $2
   AND real_ts <= $3
-  AND system_id = $5
+  AND region_id = $5
   AND ($6::text IS NULL OR zone_id = $6)
   AND ($7::text IS NULL OR event_type = $7)
   AND ($8::text IS NULL OR game_version = $8)
   AND ($9::text IS NULL OR build_channel = $9)
-GROUP BY system_id, zone_id, grid_x, grid_z, event_type
+GROUP BY region_id, zone_id, grid_x, grid_z, event_type
 ORDER BY event_count DESC
 `
 
@@ -1540,7 +1540,7 @@ type AdminZoneHeatmapParams struct {
 	RealTs       time.Time   `json:"real_ts"`
 	RealTs_2     time.Time   `json:"real_ts_2"`
 	CoordX       float64     `json:"coord_x"`
-	SystemID     string      `json:"system_id"`
+	RegionID     string      `json:"region_id"`
 	ZoneID       pgtype.Text `json:"zone_id"`
 	EventType    pgtype.Text `json:"event_type"`
 	GameVersion  pgtype.Text `json:"game_version"`
@@ -1548,7 +1548,7 @@ type AdminZoneHeatmapParams struct {
 }
 
 type AdminZoneHeatmapRow struct {
-	SystemID   string `json:"system_id"`
+	RegionID   string `json:"region_id"`
 	ZoneID     string `json:"zone_id"`
 	GridX      int64  `json:"grid_x"`
 	GridZ      int64  `json:"grid_z"`
@@ -1562,7 +1562,7 @@ func (q *Queries) AdminZoneHeatmap(ctx context.Context, arg AdminZoneHeatmapPara
 		arg.RealTs,
 		arg.RealTs_2,
 		arg.CoordX,
-		arg.SystemID,
+		arg.RegionID,
 		arg.ZoneID,
 		arg.EventType,
 		arg.GameVersion,
@@ -1576,7 +1576,7 @@ func (q *Queries) AdminZoneHeatmap(ctx context.Context, arg AdminZoneHeatmapPara
 	for rows.Next() {
 		var i AdminZoneHeatmapRow
 		if err := rows.Scan(
-			&i.SystemID,
+			&i.RegionID,
 			&i.ZoneID,
 			&i.GridX,
 			&i.GridZ,
@@ -1595,7 +1595,7 @@ func (q *Queries) AdminZoneHeatmap(ctx context.Context, arg AdminZoneHeatmapPara
 
 const adminZoneHeatmapByField = `-- name: AdminZoneHeatmapByField :many
 SELECT
-    system_id,
+    region_id,
     zone_id,
     round(coord_x / $4)::bigint AS grid_x,
     round(coord_z / $4)::bigint AS grid_z,
@@ -1615,12 +1615,12 @@ WHERE filter_field.project_id = $1
   AND events.project_id = $1
   AND real_ts >= $2
   AND real_ts <= $3
-  AND system_id = $5
+  AND region_id = $5
   AND ($12::text IS NULL OR zone_id = $12)
   AND ($13::text IS NULL OR event_type = $13)
   AND ($14::text IS NULL OR game_version = $14)
   AND ($15::text IS NULL OR build_channel = $15)
-GROUP BY system_id, zone_id, grid_x, grid_z, event_type
+GROUP BY region_id, zone_id, grid_x, grid_z, event_type
 ORDER BY event_count DESC
 `
 
@@ -1629,7 +1629,7 @@ type AdminZoneHeatmapByFieldParams struct {
 	RealTs           time.Time   `json:"real_ts"`
 	RealTs_2         time.Time   `json:"real_ts_2"`
 	CoordX           float64     `json:"coord_x"`
-	SystemID         string      `json:"system_id"`
+	RegionID         string      `json:"region_id"`
 	FieldKey         string      `json:"field_key"`
 	FieldValueType   string      `json:"field_value_type"`
 	HasFieldValue    bool        `json:"has_field_value"`
@@ -1643,7 +1643,7 @@ type AdminZoneHeatmapByFieldParams struct {
 }
 
 type AdminZoneHeatmapByFieldRow struct {
-	SystemID   string `json:"system_id"`
+	RegionID   string `json:"region_id"`
 	ZoneID     string `json:"zone_id"`
 	GridX      int64  `json:"grid_x"`
 	GridZ      int64  `json:"grid_z"`
@@ -1657,7 +1657,7 @@ func (q *Queries) AdminZoneHeatmapByField(ctx context.Context, arg AdminZoneHeat
 		arg.RealTs,
 		arg.RealTs_2,
 		arg.CoordX,
-		arg.SystemID,
+		arg.RegionID,
 		arg.FieldKey,
 		arg.FieldValueType,
 		arg.HasFieldValue,
@@ -1677,7 +1677,7 @@ func (q *Queries) AdminZoneHeatmapByField(ctx context.Context, arg AdminZoneHeat
 	for rows.Next() {
 		var i AdminZoneHeatmapByFieldRow
 		if err := rows.Scan(
-			&i.SystemID,
+			&i.RegionID,
 			&i.ZoneID,
 			&i.GridX,
 			&i.GridZ,

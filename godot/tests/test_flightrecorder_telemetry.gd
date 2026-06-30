@@ -23,7 +23,7 @@ func test_build_event_emits_schema_v2_layers_from_compat_context() -> void:
 		},
 		{
 			"game_time": 1843200,
-			"system_id": "lave",
+			"region_id": "lave",
 			"zone_id": "lave_primary",
 			"coordinates": [1240.5, -80.0, 330.2],
 			"credits": 48200,
@@ -37,8 +37,8 @@ func test_build_event_emits_schema_v2_layers_from_compat_context() -> void:
 	assert_eq(event["player_id"], "550e8400-e29b-41d4-a716-446655440000")
 	assert_eq(event["event_type"], "dock")
 	assert_eq(event["game_time"], 1843200)
-	assert_eq(event["context"]["location"]["world_id"], "lave")
-	assert_eq(event["context"]["location"]["area_id"], "lave_primary")
+	assert_eq(event["context"]["location"]["region_id"], "lave")
+	assert_eq(event["context"]["location"]["zone_id"], "lave_primary")
 	assert_eq(event["context"]["location"]["position"], [1240.5, -80.0, 330.2])
 	assert_eq(event["metrics"]["economy.credits"], 48200)
 	assert_eq(event["metrics"]["ship.hull_pct"], 0.94)
@@ -61,8 +61,8 @@ func test_build_event_preserves_explicit_generic_context_metrics_and_dimensions(
 			"game_time": 99,
 			"context": {
 				"location": {
-					"world_id": "arena_1",
-					"area_id": "room_a",
+					"region_id": "arena_1",
+					"zone_id": "room_a",
 					"position": [1.0, 2.0, 3.0],
 				},
 				"difficulty": "hard",
@@ -78,7 +78,7 @@ func test_build_event_preserves_explicit_generic_context_metrics_and_dimensions(
 	)
 
 	assert_eq(event["player_id"], "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
-	assert_eq(event["context"]["location"]["world_id"], "arena_1")
+	assert_eq(event["context"]["location"]["region_id"], "arena_1")
 	assert_eq(event["context"]["difficulty"], "hard")
 	assert_eq(event["metrics"]["character.level"], 12)
 	assert_eq(event["metrics"]["wave.time_ms"], 45200)
@@ -189,7 +189,7 @@ func test_record_event_writes_event_to_project_wal() -> void:
 			"station_id": "demo_station",
 		},
 		{
-			"system_id": "lave",
+			"region_id": "lave",
 			"zone_id": "lave_primary",
 			"coordinates": [1.0, 2.0, 3.0],
 		},
@@ -200,7 +200,7 @@ func test_record_event_writes_event_to_project_wal() -> void:
 	assert_eq(records.size(), 1)
 	assert_eq(records[0]["kind"], "event")
 	assert_eq(records[0]["event"]["event_type"], "dock")
-	assert_eq(records[0]["event"]["context"]["location"]["world_id"], "lave")
+	assert_eq(records[0]["event"]["context"]["location"]["region_id"], "lave")
 
 
 func test_submit_bug_report_writes_report_body_to_project_wal() -> void:
@@ -212,7 +212,7 @@ func test_submit_bug_report_writes_report_body_to_project_wal() -> void:
 		"Report note",
 		"",
 		{
-			"system_id": "reorte",
+			"region_id": "reorte",
 			"zone_id": "reorte_open",
 			"coordinates": [4.0, 5.0, 6.0],
 		},

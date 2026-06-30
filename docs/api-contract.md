@@ -57,8 +57,8 @@ Request:
       "game_time": 1843200,
       "context": {
         "location": {
-          "world_id": "lave",
-          "area_id": "lave_primary",
+          "region_id": "lave",
+          "zone_id": "lave_primary",
           "position": [1240.5, -80.0, 330.2]
         }
       },
@@ -98,7 +98,7 @@ Response:
 | `event_type` | string | yes | Stable event type name. |
 | `real_ts` | string | yes | Client event time, ISO 8601 UTC. |
 | `game_time` | integer | yes | In-game seconds elapsed. |
-| `context` | object | no | Generic context. `context.location.world_id`, `area_id`, and `position` power map/trace screens when present. |
+| `context` | object | no | Generic context. `context.location.region_id`, `zone_id`, and `position` power map/trace screens when present. |
 | `metrics` | object | no | Project-declared numeric state such as Sursidus credits, hull, and shields. |
 | `dimensions` | object | no | Project-declared string/bool grouping values such as ship ID or station ID. |
 | `payload` | object | yes | Event-specific data. |
@@ -137,8 +137,8 @@ Request:
     "game_time": 1843200,
     "context": {
       "location": {
-        "world_id": "reorte",
-        "area_id": "reorte_open",
+        "region_id": "reorte",
+        "zone_id": "reorte_open",
         "position": [4200.1, 0.0, -810.3]
       }
     },
@@ -199,9 +199,9 @@ The admin API powers the future Vite dashboard. It returns JSON only.
 | Route | Purpose |
 |---|---|
 | `GET /api/admin/v1/summary` | Time-windowed totals for events, players, sessions, deaths, reports, and opt-in counts. |
-| `GET /api/admin/v1/events` | Paginated event search by type, system, zone, player, version, channel, configured field, and time range. |
+| `GET /api/admin/v1/events` | Paginated event search by type, region, zone, player, version, channel, configured field, and time range. |
 | `GET /api/admin/v1/players/{player_id}/trace` | Chronological playthrough trace. |
-| `GET /api/admin/v1/heatmap/systems` | Per-system event counts for galaxy map colouring, with the same event/version/channel/configured-field filters. |
+| `GET /api/admin/v1/heatmap/regions` | Per-region event counts for the regions map colouring, with the same event/version/channel/configured-field filters. |
 | `GET /api/admin/v1/heatmap/zones` | Binned zone-space `(x, z)` counts, with the same event/version/channel/configured-field filters. |
 | `GET /api/admin/v1/funnels` | Named funnel results. |
 | `GET /api/admin/v1/reports` | Bug/sentiment report inbox. |

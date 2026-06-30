@@ -23,7 +23,7 @@ func registerAdminRoutes(adminGroup *route.RouterGroup, adminAuth services.Admin
 	protected.GET("/summary", makeAdminSummary(adminSvc))
 	protected.GET("/events", makeAdminEvents(adminSvc))
 	protected.GET("/players/:player_id/trace", makeAdminPlayerTrace(adminSvc))
-	protected.GET("/heatmap/systems", makeAdminSystemHeatmap(adminSvc))
+	protected.GET("/heatmap/regions", makeAdminRegionHeatmap(adminSvc))
 	protected.GET("/heatmap/zones", makeAdminZoneHeatmap(adminSvc))
 	protected.GET("/funnels", makeAdminFunnels(adminSvc))
 	protected.GET("/reports", makeAdminReports(adminSvc))
@@ -114,7 +114,7 @@ func makeAdminEvents(adminSvc services.Admin) app.HandlerFunc {
 		events, err := adminSvc.ListEvents(ctx, services.EventListFilter{
 			TimeProjectFilter: timeFilter,
 			EventType:         queryPtr(c, "event_type"),
-			SystemID:          queryPtr(c, "system_id"),
+			RegionID:          queryPtr(c, "region_id"),
 			ZoneID:            queryPtr(c, "zone_id"),
 			PlayerID:          queryPtr(c, "player_id"),
 			GameVersion:       queryPtr(c, "game_version"),
@@ -143,14 +143,14 @@ func makeAdminPlayerTrace(adminSvc services.Admin) app.HandlerFunc {
 	}
 }
 
-func makeAdminSystemHeatmap(adminSvc services.Admin) app.HandlerFunc {
+func makeAdminRegionHeatmap(adminSvc services.Admin) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
 		timeFilter, err := adminTimeFilter(c)
 		if err != nil {
 			writeServiceError(c, err)
 			return
 		}
-		cells, err := adminSvc.SystemHeatmap(ctx, services.HeatmapFilter{
+		cells, err := adminSvc.RegionHeatmap(ctx, services.HeatmapFilter{
 			TimeProjectFilter: timeFilter,
 			EventType:         queryPtr(c, "event_type"),
 			GameVersion:       queryPtr(c, "game_version"),
@@ -182,7 +182,7 @@ func makeAdminZoneHeatmap(adminSvc services.Admin) app.HandlerFunc {
 				FieldKey:          queryPtr(c, "field_key"),
 				FieldValue:        queryPtr(c, "field_value"),
 			},
-			SystemID: query(c, "system_id"),
+			RegionID: query(c, "region_id"),
 			ZoneID:   queryPtr(c, "zone_id"),
 			CellM:    float64(services.ParseLimit(query(c, "cell_m"), 300)),
 		})

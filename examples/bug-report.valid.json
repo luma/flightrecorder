@@ -15,8 +15,8 @@
     "game_time": 1843200,
     "context": {
       "location": {
-        "world_id": "reorte",
-        "area_id": "reorte_open",
+        "region_id": "reorte",
+        "zone_id": "reorte_open",
         "position": [4200.1, 0.0, -810.3]
       }
     },

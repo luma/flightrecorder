@@ -132,7 +132,7 @@ INSERT INTO events (
     event_type,
     real_ts,
     game_time,
-    system_id,
+    region_id,
     zone_id,
     coord_x,
     coord_y,
@@ -161,7 +161,7 @@ type CreateEventParams struct {
 	EventType        string          `json:"event_type"`
 	RealTs           time.Time       `json:"real_ts"`
 	GameTime         int64           `json:"game_time"`
-	SystemID         string          `json:"system_id"`
+	RegionID         string          `json:"region_id"`
 	ZoneID           string          `json:"zone_id"`
 	CoordX           float64         `json:"coord_x"`
 	CoordY           float64         `json:"coord_y"`
@@ -186,7 +186,7 @@ func (q *Queries) CreateEvent(ctx context.Context, arg CreateEventParams) (uuid.
 		arg.EventType,
 		arg.RealTs,
 		arg.GameTime,
-		arg.SystemID,
+		arg.RegionID,
 		arg.ZoneID,
 		arg.CoordX,
 		arg.CoordY,

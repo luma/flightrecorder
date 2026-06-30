@@ -27,7 +27,7 @@ type Admin interface {
 	Summary(ctx context.Context, filter TimeProjectFilter) (SummaryResponse, error)
 	ListEvents(ctx context.Context, filter EventListFilter) ([]EventSummary, error)
 	PlayerTrace(ctx context.Context, projectKey string, playerID string, limit int32) ([]TraceEvent, error)
-	SystemHeatmap(ctx context.Context, filter HeatmapFilter) ([]SystemHeatmapCell, error)
+	RegionHeatmap(ctx context.Context, filter HeatmapFilter) ([]RegionHeatmapCell, error)
 	ZoneHeatmap(ctx context.Context, filter ZoneHeatmapFilter) ([]ZoneHeatmapCell, error)
 	Funnels(ctx context.Context, filter TimeProjectFilter) (FunnelsResponse, error)
 	ListReports(ctx context.Context, filter ReportListFilter) ([]ReportSummary, error)
@@ -49,7 +49,7 @@ type TimeProjectFilter struct {
 type EventListFilter struct {
 	TimeProjectFilter
 	EventType    *string
-	SystemID     *string
+	RegionID     *string
 	ZoneID       *string
 	PlayerID     *string
 	GameVersion  *string
@@ -71,7 +71,7 @@ type HeatmapFilter struct {
 
 type ZoneHeatmapFilter struct {
 	HeatmapFilter
-	SystemID string
+	RegionID string
 	ZoneID   *string
 	CellM    float64
 }
@@ -101,7 +101,7 @@ type EventSummary struct {
 	EventType        string          `json:"event_type"`
 	RealTS           string          `json:"real_ts"`
 	GameTime         int64           `json:"game_time"`
-	SystemID         string          `json:"system_id"`
+	RegionID         string          `json:"region_id"`
 	ZoneID           string          `json:"zone_id"`
 	Coordinates      []float64       `json:"coordinates"`
 	GameVersion      string          `json:"game_version"`
@@ -122,7 +122,7 @@ type TraceEvent struct {
 	EventType   string          `json:"event_type"`
 	RealTS      string          `json:"real_ts"`
 	GameTime    int64           `json:"game_time"`
-	SystemID    string          `json:"system_id"`
+	RegionID    string          `json:"region_id"`
 	ZoneID      string          `json:"zone_id"`
 	Coordinates []float64       `json:"coordinates,omitempty"`
 	Context     json.RawMessage `json:"context"`
@@ -132,14 +132,14 @@ type TraceEvent struct {
 	Payload     json.RawMessage `json:"payload"`
 }
 
-type SystemHeatmapCell struct {
-	SystemID   string `json:"system_id"`
+type RegionHeatmapCell struct {
+	RegionID   string `json:"region_id"`
 	EventType  string `json:"event_type"`
 	EventCount int64  `json:"event_count"`
 }
 
 type ZoneHeatmapCell struct {
-	SystemID   string `json:"system_id"`
+	RegionID   string `json:"region_id"`
 	ZoneID     string `json:"zone_id"`
 	GridX      int64  `json:"grid_x"`
 	GridZ      int64  `json:"grid_z"`
@@ -173,7 +173,7 @@ type ReportSummary struct {
 	PlayerID            string          `json:"player_id"`
 	RealTS              string          `json:"real_ts"`
 	GameTime            int64           `json:"game_time"`
-	SystemID            string          `json:"system_id"`
+	RegionID            string          `json:"region_id"`
 	ZoneID              string          `json:"zone_id"`
 	Context             json.RawMessage `json:"context"`
 	Metrics             json.RawMessage `json:"metrics"`
@@ -376,7 +376,7 @@ func (s *adminService) ListEvents(ctx context.Context, filter EventListFilter) (
 			FieldNumberValue: fieldFilter.NumberValue,
 			FieldBoolValue:   fieldFilter.BoolValue,
 			EventType:        optionalTextPtr(filter.EventType),
-			SystemID:         optionalTextPtr(filter.SystemID),
+			RegionID:         optionalTextPtr(filter.RegionID),
 			ZoneID:           optionalTextPtr(filter.ZoneID),
 			PlayerID:         playerID,
 			GameVersion:      optionalTextPtr(filter.GameVersion),
@@ -393,7 +393,7 @@ func (s *adminService) ListEvents(ctx context.Context, filter EventListFilter) (
 				EventType:        row.EventType,
 				RealTS:           formatTime(row.RealTs),
 				GameTime:         row.GameTime,
-				SystemID:         row.SystemID,
+				RegionID:         row.RegionID,
 				ZoneID:           row.ZoneID,
 				Coordinates:      []float64{row.CoordX, row.CoordY, row.CoordZ},
 				GameVersion:      row.GameVersion,
@@ -418,7 +418,7 @@ func (s *adminService) ListEvents(ctx context.Context, filter EventListFilter) (
 		Limit:        clampLimit(filter.Limit, 100),
 		Offset:       maxInt32(filter.Offset, 0),
 		EventType:    optionalTextPtr(filter.EventType),
-		SystemID:     optionalTextPtr(filter.SystemID),
+		RegionID:     optionalTextPtr(filter.RegionID),
 		ZoneID:       optionalTextPtr(filter.ZoneID),
 		PlayerID:     playerID,
 		GameVersion:  optionalTextPtr(filter.GameVersion),
@@ -435,7 +435,7 @@ func (s *adminService) ListEvents(ctx context.Context, filter EventListFilter) (
 			EventType:        row.EventType,
 			RealTS:           formatTime(row.RealTs),
 			GameTime:         row.GameTime,
-			SystemID:         row.SystemID,
+			RegionID:         row.RegionID,
 			ZoneID:           row.ZoneID,
 			Coordinates:      []float64{row.CoordX, row.CoordY, row.CoordZ},
 			GameVersion:      row.GameVersion,
@@ -478,7 +478,7 @@ func (s *adminService) PlayerTrace(ctx context.Context, projectKey string, playe
 			EventType:   row.EventType,
 			RealTS:      formatTime(row.RealTs),
 			GameTime:    row.GameTime,
-			SystemID:    row.SystemID,
+			RegionID:    row.RegionID,
 			ZoneID:      row.ZoneID,
 			Coordinates: []float64{row.CoordX, row.CoordY, row.CoordZ},
 			Context:     row.Context,
@@ -491,7 +491,7 @@ func (s *adminService) PlayerTrace(ctx context.Context, projectKey string, playe
 	return out, nil
 }
 
-func (s *adminService) SystemHeatmap(ctx context.Context, filter HeatmapFilter) ([]SystemHeatmapCell, error) {
+func (s *adminService) RegionHeatmap(ctx context.Context, filter HeatmapFilter) ([]RegionHeatmapCell, error) {
 	project, err := s.loadProject(ctx, filter.ProjectID)
 	if err != nil {
 		return nil, err
@@ -501,7 +501,7 @@ func (s *adminService) SystemHeatmap(ctx context.Context, filter HeatmapFilter) 
 		return nil, err
 	}
 	if hasFieldFilter {
-		rows, err := s.queries.AdminSystemHeatmapByField(ctx, dbq.AdminSystemHeatmapByFieldParams{
+		rows, err := s.queries.AdminRegionHeatmapByField(ctx, dbq.AdminRegionHeatmapByFieldParams{
 			ProjectID:        project.ID,
 			RealTs:           filter.From,
 			RealTs_2:         filter.To,
@@ -518,17 +518,17 @@ func (s *adminService) SystemHeatmap(ctx context.Context, filter HeatmapFilter) 
 		if err != nil {
 			return nil, err
 		}
-		out := make([]SystemHeatmapCell, 0, len(rows))
+		out := make([]RegionHeatmapCell, 0, len(rows))
 		for _, row := range rows {
-			out = append(out, SystemHeatmapCell{
-				SystemID:   row.SystemID,
+			out = append(out, RegionHeatmapCell{
+				RegionID:   row.RegionID,
 				EventType:  row.EventType,
 				EventCount: row.EventCount,
 			})
 		}
 		return out, nil
 	}
-	rows, err := s.queries.AdminSystemHeatmap(ctx, dbq.AdminSystemHeatmapParams{
+	rows, err := s.queries.AdminRegionHeatmap(ctx, dbq.AdminRegionHeatmapParams{
 		ProjectID:    project.ID,
 		RealTs:       filter.From,
 		RealTs_2:     filter.To,
@@ -539,10 +539,10 @@ func (s *adminService) SystemHeatmap(ctx context.Context, filter HeatmapFilter) 
 	if err != nil {
 		return nil, err
 	}
-	out := make([]SystemHeatmapCell, 0, len(rows))
+	out := make([]RegionHeatmapCell, 0, len(rows))
 	for _, row := range rows {
-		out = append(out, SystemHeatmapCell{
-			SystemID:   row.SystemID,
+		out = append(out, RegionHeatmapCell{
+			RegionID:   row.RegionID,
 			EventType:  row.EventType,
 			EventCount: row.EventCount,
 		})
@@ -551,8 +551,8 @@ func (s *adminService) SystemHeatmap(ctx context.Context, filter HeatmapFilter) 
 }
 
 func (s *adminService) ZoneHeatmap(ctx context.Context, filter ZoneHeatmapFilter) ([]ZoneHeatmapCell, error) {
-	if filter.SystemID == "" {
-		return nil, fmt.Errorf("%w: system_id is required", ErrBadRequest)
+	if filter.RegionID == "" {
+		return nil, fmt.Errorf("%w: region_id is required", ErrBadRequest)
 	}
 	project, err := s.loadProject(ctx, filter.ProjectID)
 	if err != nil {
@@ -572,7 +572,7 @@ func (s *adminService) ZoneHeatmap(ctx context.Context, filter ZoneHeatmapFilter
 			RealTs:           filter.From,
 			RealTs_2:         filter.To,
 			CoordX:           cellM,
-			SystemID:         filter.SystemID,
+			RegionID:         filter.RegionID,
 			FieldKey:         fieldFilter.Key,
 			FieldValueType:   fieldFilter.ValueType,
 			HasFieldValue:    fieldFilter.HasValue,
@@ -590,7 +590,7 @@ func (s *adminService) ZoneHeatmap(ctx context.Context, filter ZoneHeatmapFilter
 		out := make([]ZoneHeatmapCell, 0, len(rows))
 		for _, row := range rows {
 			out = append(out, ZoneHeatmapCell{
-				SystemID:   row.SystemID,
+				RegionID:   row.RegionID,
 				ZoneID:     row.ZoneID,
 				GridX:      row.GridX,
 				GridZ:      row.GridZ,
@@ -605,7 +605,7 @@ func (s *adminService) ZoneHeatmap(ctx context.Context, filter ZoneHeatmapFilter
 		RealTs:       filter.From,
 		RealTs_2:     filter.To,
 		CoordX:       cellM,
-		SystemID:     filter.SystemID,
+		RegionID:     filter.RegionID,
 		ZoneID:       optionalTextPtr(filter.ZoneID),
 		EventType:    optionalTextPtr(filter.EventType),
 		GameVersion:  optionalTextPtr(filter.GameVersion),
@@ -617,7 +617,7 @@ func (s *adminService) ZoneHeatmap(ctx context.Context, filter ZoneHeatmapFilter
 	out := make([]ZoneHeatmapCell, 0, len(rows))
 	for _, row := range rows {
 		out = append(out, ZoneHeatmapCell{
-			SystemID:   row.SystemID,
+			RegionID:   row.RegionID,
 			ZoneID:     row.ZoneID,
 			GridX:      row.GridX,
 			GridZ:      row.GridZ,
@@ -683,7 +683,7 @@ func (s *adminService) ListReports(ctx context.Context, filter ReportListFilter)
 				PlayerID:            row.PlayerID.String(),
 				RealTS:              formatTime(row.RealTs),
 				GameTime:            row.GameTime,
-				SystemID:            row.SystemID,
+				RegionID:            row.RegionID,
 				ZoneID:              row.ZoneID,
 				Context:             row.Context,
 				Metrics:             row.Metrics,
@@ -716,7 +716,7 @@ func (s *adminService) ListReports(ctx context.Context, filter ReportListFilter)
 			PlayerID:            row.PlayerID.String(),
 			RealTS:              formatTime(row.RealTs),
 			GameTime:            row.GameTime,
-			SystemID:            row.SystemID,
+			RegionID:            row.RegionID,
 			ZoneID:              row.ZoneID,
 			Context:             row.Context,
 			Metrics:             row.Metrics,
@@ -757,7 +757,7 @@ func (s *adminService) GetReport(ctx context.Context, projectKey string, reportI
 			EventType:  traceRow.EventType,
 			RealTS:     formatTime(traceRow.RealTs),
 			GameTime:   traceRow.GameTime,
-			SystemID:   traceRow.SystemID,
+			RegionID:   traceRow.RegionID,
 			ZoneID:     traceRow.ZoneID,
 			Context:    traceRow.Context,
 			Metrics:    traceRow.Metrics,
@@ -790,7 +790,7 @@ func (s *adminService) GetReport(ctx context.Context, projectKey string, reportI
 			PlayerID:            row.PlayerID.String(),
 			RealTS:              formatTime(row.RealTs),
 			GameTime:            row.GameTime,
-			SystemID:            row.SystemID,
+			RegionID:            row.RegionID,
 			ZoneID:              row.ZoneID,
 			Context:             row.Context,
 			Metrics:             row.Metrics,
@@ -1128,7 +1128,7 @@ const defaultRetentionConfigJSON = `{
 }`
 
 const defaultMapConfigJSON = `{
-  "systems_overlay": "",
+  "spatial_enabled": true,
   "zone_extent_m": 30000,
   "zone_heatmap_cell_m": 300
 }`

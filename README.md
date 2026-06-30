@@ -157,7 +157,7 @@ VALUES (
         "access_log_days": 14
     }'::jsonb,
     '{
-        "systems_overlay": "configs/sursidus/systems-map.json",
+        "spatial_enabled": true,
         "zone_extent_m": 30000,
         "zone_heatmap_cell_m": 300
     }'::jsonb,
@@ -294,7 +294,7 @@ Bug reports are rate-limited by player. If you resubmit the same report
 fixture repeatedly, wait at least 60 seconds or edit the fixture's player and
 report IDs.
 
-Refresh the admin UI and use the `Events`, `Reports`, `Trace`, `Galaxy`, `Zone`,
+Refresh the admin UI and use the `Events`, `Reports`, `Trace`, `Regions`, `Zone`,
 `Funnels`, and `Schema` tabs to inspect the submitted data.
 
 ### Local Storage

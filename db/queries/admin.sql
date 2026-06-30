@@ -23,7 +23,7 @@ SELECT
     event_type,
     real_ts,
     game_time,
-    system_id,
+    region_id,
     zone_id,
     coord_x,
     coord_y,
@@ -56,7 +56,7 @@ SELECT
 FROM events
 WHERE events.project_id = $1
   AND (sqlc.narg('event_type')::text IS NULL OR event_type = sqlc.narg('event_type'))
-  AND (sqlc.narg('system_id')::text IS NULL OR system_id = sqlc.narg('system_id'))
+  AND (sqlc.narg('region_id')::text IS NULL OR region_id = sqlc.narg('region_id'))
   AND (sqlc.narg('zone_id')::text IS NULL OR zone_id = sqlc.narg('zone_id'))
   AND (sqlc.narg('player_id')::uuid IS NULL OR player_id = sqlc.narg('player_id')::uuid)
   AND (sqlc.narg('game_version')::text IS NULL OR game_version = sqlc.narg('game_version'))
@@ -74,7 +74,7 @@ SELECT
     event_type,
     real_ts,
     game_time,
-    system_id,
+    region_id,
     zone_id,
     coord_x,
     coord_y,
@@ -117,7 +117,7 @@ WHERE filter_field.project_id = $1
   )
   AND events.project_id = $1
   AND (sqlc.narg('event_type')::text IS NULL OR event_type = sqlc.narg('event_type'))
-  AND (sqlc.narg('system_id')::text IS NULL OR system_id = sqlc.narg('system_id'))
+  AND (sqlc.narg('region_id')::text IS NULL OR region_id = sqlc.narg('region_id'))
   AND (sqlc.narg('zone_id')::text IS NULL OR zone_id = sqlc.narg('zone_id'))
   AND (sqlc.narg('player_id')::uuid IS NULL OR player_id = sqlc.narg('player_id')::uuid)
   AND (sqlc.narg('game_version')::text IS NULL OR game_version = sqlc.narg('game_version'))
@@ -134,7 +134,7 @@ SELECT
     event_type,
     real_ts,
     game_time,
-    system_id,
+    region_id,
     zone_id,
     coord_x,
     coord_y,
@@ -164,9 +164,9 @@ WHERE events.project_id = $1
 ORDER BY game_time ASC
 LIMIT $3;
 
--- name: AdminSystemHeatmap :many
+-- name: AdminRegionHeatmap :many
 SELECT
-    system_id,
+    region_id,
     event_type,
     count(*)::bigint AS event_count
 FROM events
@@ -176,12 +176,12 @@ WHERE events.project_id = $1
   AND (sqlc.narg('event_type')::text IS NULL OR event_type = sqlc.narg('event_type'))
   AND (sqlc.narg('game_version')::text IS NULL OR game_version = sqlc.narg('game_version'))
   AND (sqlc.narg('build_channel')::text IS NULL OR build_channel = sqlc.narg('build_channel'))
-GROUP BY system_id, event_type
+GROUP BY region_id, event_type
 ORDER BY event_count DESC;
 
--- name: AdminSystemHeatmapByField :many
+-- name: AdminRegionHeatmapByField :many
 SELECT
-    system_id,
+    region_id,
     event_type,
     count(*)::bigint AS event_count
 FROM event_fields filter_field
@@ -201,12 +201,12 @@ WHERE filter_field.project_id = $1
   AND (sqlc.narg('event_type')::text IS NULL OR event_type = sqlc.narg('event_type'))
   AND (sqlc.narg('game_version')::text IS NULL OR game_version = sqlc.narg('game_version'))
   AND (sqlc.narg('build_channel')::text IS NULL OR build_channel = sqlc.narg('build_channel'))
-GROUP BY system_id, event_type
+GROUP BY region_id, event_type
 ORDER BY event_count DESC;
 
 -- name: AdminZoneHeatmap :many
 SELECT
-    system_id,
+    region_id,
     zone_id,
     round(coord_x / $4)::bigint AS grid_x,
     round(coord_z / $4)::bigint AS grid_z,
@@ -216,17 +216,17 @@ FROM events
 WHERE events.project_id = $1
   AND real_ts >= $2
   AND real_ts <= $3
-  AND system_id = $5
+  AND region_id = $5
   AND (sqlc.narg('zone_id')::text IS NULL OR zone_id = sqlc.narg('zone_id'))
   AND (sqlc.narg('event_type')::text IS NULL OR event_type = sqlc.narg('event_type'))
   AND (sqlc.narg('game_version')::text IS NULL OR game_version = sqlc.narg('game_version'))
   AND (sqlc.narg('build_channel')::text IS NULL OR build_channel = sqlc.narg('build_channel'))
-GROUP BY system_id, zone_id, grid_x, grid_z, event_type
+GROUP BY region_id, zone_id, grid_x, grid_z, event_type
 ORDER BY event_count DESC;
 
 -- name: AdminZoneHeatmapByField :many
 SELECT
-    system_id,
+    region_id,
     zone_id,
     round(coord_x / $4)::bigint AS grid_x,
     round(coord_z / $4)::bigint AS grid_z,
@@ -246,12 +246,12 @@ WHERE filter_field.project_id = $1
   AND events.project_id = $1
   AND real_ts >= $2
   AND real_ts <= $3
-  AND system_id = $5
+  AND region_id = $5
   AND (sqlc.narg('zone_id')::text IS NULL OR zone_id = sqlc.narg('zone_id'))
   AND (sqlc.narg('event_type')::text IS NULL OR event_type = sqlc.narg('event_type'))
   AND (sqlc.narg('game_version')::text IS NULL OR game_version = sqlc.narg('game_version'))
   AND (sqlc.narg('build_channel')::text IS NULL OR build_channel = sqlc.narg('build_channel'))
-GROUP BY system_id, zone_id, grid_x, grid_z, event_type
+GROUP BY region_id, zone_id, grid_x, grid_z, event_type
 ORDER BY event_count DESC;
 
 -- name: AdminListReports :many
@@ -268,7 +268,7 @@ SELECT
     e.player_id,
     e.real_ts,
     e.game_time,
-    e.system_id,
+    e.region_id,
     e.zone_id,
     e.context,
     e.metrics,
@@ -296,7 +296,7 @@ SELECT
     e.player_id,
     e.real_ts,
     e.game_time,
-    e.system_id,
+    e.region_id,
     e.zone_id,
     e.context,
     e.metrics,
@@ -326,7 +326,7 @@ SELECT
     e.player_id,
     e.real_ts,
     e.game_time,
-    e.system_id,
+    e.region_id,
     e.zone_id,
     e.coord_x,
     e.coord_y,
@@ -355,7 +355,7 @@ SELECT
     e.event_type,
     e.real_ts,
     e.game_time,
-    e.system_id,
+    e.region_id,
     e.zone_id,
     e.context,
     e.metrics,

@@ -56,7 +56,7 @@ type Event struct {
 	EventType        string          `json:"event_type"`
 	RealTs           time.Time       `json:"real_ts"`
 	GameTime         int64           `json:"game_time"`
-	SystemID         string          `json:"system_id"`
+	RegionID         string          `json:"region_id"`
 	ZoneID           string          `json:"zone_id"`
 	CoordX           float64         `json:"coord_x"`
 	CoordY           float64         `json:"coord_y"`

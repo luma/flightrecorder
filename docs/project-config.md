@@ -24,7 +24,7 @@ The first project config is `examples/sursidus.project.json`.
     "access_log_days": 14
   },
   "maps": {
-    "systems_overlay": "configs/sursidus/systems-map.json",
+    "spatial_enabled": true,
     "zone_extent_m": 30000,
     "zone_heatmap_cell_m": 300
   },
@@ -76,7 +76,7 @@ The first project config is `examples/sursidus.project.json`.
 | `retention.event_days` | Event-row retention target. |
 | `retention.report_days` | Bug-report retention target. |
 | `retention.access_log_days` | HTTP access log retention target. Keep short to avoid storing raw IPs longer than needed. |
-| `maps.systems_overlay` | Optional project map overlay config path for the admin UI. |
+| `maps.spatial_enabled` | Whether the game has physical regions/zones. When false, the admin hides the Regions and Zone map tabs. |
 | `maps.zone_extent_m` | Expected width/depth of a zone in metres. |
 | `maps.zone_heatmap_cell_m` | Bin size for zone heat-map aggregation. |
 | `reports.statuses` | Allowed triage statuses. |

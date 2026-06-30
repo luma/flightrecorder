@@ -499,11 +499,11 @@ func _event_context_from_context(context: Dictionary) -> Dictionary:
 	event_context.erase("shield_pct")
 	event_context.erase("ship_id")
 	event_context["location"] = {
-		"world_id": str(context.get("system_id", "unknown")),
-		"area_id": str(context.get("zone_id", "unknown")),
+		"region_id": str(context.get("region_id", "unknown")),
+		"zone_id": str(context.get("zone_id", "unknown")),
 		"position": _coordinates_from_context(context),
 	}
-	event_context.erase("system_id")
+	event_context.erase("region_id")
 	event_context.erase("zone_id")
 	event_context.erase("coordinates")
 	return event_context

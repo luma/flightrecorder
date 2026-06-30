@@ -37,8 +37,8 @@ type eventContext struct {
 }
 
 type eventLocation struct {
-	WorldID  string    `json:"world_id"`
-	AreaID   string    `json:"area_id"`
+	RegionID string    `json:"region_id"`
+	ZoneID   string    `json:"zone_id"`
 	Position []float64 `json:"position"`
 }
 
@@ -92,9 +92,9 @@ type retentionConfig struct {
 }
 
 type mapsConfig struct {
-	SystemsOverlay   string `json:"systems_overlay"`
-	ZoneExtentM      int    `json:"zone_extent_m"`
-	ZoneHeatmapCellM int    `json:"zone_heatmap_cell_m"`
+	SpatialEnabled   bool `json:"spatial_enabled"`
+	ZoneExtentM      int  `json:"zone_extent_m"`
+	ZoneHeatmapCellM int  `json:"zone_heatmap_cell_m"`
 }
 
 type reportsConfig struct {
@@ -200,8 +200,8 @@ func requireEnvelope(event eventEnvelope, wantType string) {
 	requireNonEmpty("player_id", event.PlayerID)
 	ExpectWithOffset(1, event.EventType).To(Equal(wantType))
 	requireISOTime("real_ts", event.RealTS)
-	requireNonEmpty("context.location.world_id", event.Context.Location.WorldID)
-	requireNonEmpty("context.location.area_id", event.Context.Location.AreaID)
+	requireNonEmpty("context.location.region_id", event.Context.Location.RegionID)
+	requireNonEmpty("context.location.zone_id", event.Context.Location.ZoneID)
 	ExpectWithOffset(1, event.Context.Location.Position).To(HaveLen(3))
 	ExpectWithOffset(1, event.GameTime).To(BeNumerically(">=", 0))
 	ExpectWithOffset(1, event.Payload).ToNot(BeEmpty())

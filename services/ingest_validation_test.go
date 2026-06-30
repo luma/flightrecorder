@@ -15,7 +15,7 @@ var _ = Describe("ingest validation", func() {
 			EventType:     eventType,
 			RealTS:        "2026-06-06T11:42:00Z",
 			GameTime:      1843200,
-			Context:       json.RawMessage(`{"location":{"world_id":"lave","area_id":"lave_primary","position":[1240.5,-80.0,330.2]}}`),
+			Context:       json.RawMessage(`{"location":{"region_id":"lave","zone_id":"lave_primary","position":[1240.5,-80.0,330.2]}}`),
 			Metrics:       json.RawMessage(`{"economy.credits":48200,"ship.hull_pct":0.94,"ship.shield_pct":1.0}`),
 			Dimensions:    json.RawMessage(`{"ship.id":"cobra_mk3"}`),
 			Payload:       json.RawMessage(`{"station_id":"stn_6a11eb1c-5cab-46f3-a911-0f8e8a14e6cd"}`),
@@ -28,7 +28,7 @@ var _ = Describe("ingest validation", func() {
 
 	It("rejects malformed event envelopes", func() {
 		event := validEvent("dock")
-		event.Context = json.RawMessage(`{"location":{"world_id":"lave","area_id":"lave_primary","position":[1,2]}}`)
+		event.Context = json.RawMessage(`{"location":{"region_id":"lave","zone_id":"lave_primary","position":[1,2]}}`)
 
 		Expect(validateEvent(event)).To(MatchError(ContainSubstring("context.location.position must contain x, y, z")))
 	})
@@ -87,7 +87,7 @@ var _ = Describe("ingest validation", func() {
 				"event_type":"dock",
 				"real_ts":"2026-06-06T11:42:00Z",
 				"game_time":1843200,
-				"context":{"location":{"world_id":"lave","area_id":"lave_primary","position":[1,2,3]}},
+				"context":{"location":{"region_id":"lave","zone_id":"lave_primary","position":[1,2,3]}},
 				"metrics":{},
 				"dimensions":{},
 				"payload":{},
@@ -112,7 +112,7 @@ var _ = Describe("ingest validation", func() {
 				"event_type":"bug_report",
 				"real_ts":"2026-06-06T11:42:00Z",
 				"game_time":1843200,
-				"context":{"location":{"world_id":"lave","area_id":"lave_primary","position":[1,2,3]}},
+				"context":{"location":{"region_id":"lave","zone_id":"lave_primary","position":[1,2,3]}},
 				"metrics":{},
 				"dimensions":{},
 				"payload":{"mood":1,"mood_label":"bad","notes":"oops","screenshot_png_base64":"abc"},

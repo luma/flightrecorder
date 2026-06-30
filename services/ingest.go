@@ -70,8 +70,8 @@ func (e *EventEnvelope) UnmarshalJSON(data []byte) error {
 }
 
 type EventLocation struct {
-	WorldID  string    `json:"world_id"`
-	AreaID   string    `json:"area_id"`
+	RegionID string    `json:"region_id"`
+	ZoneID   string    `json:"zone_id"`
 	Position []float64 `json:"position"`
 }
 
@@ -511,8 +511,8 @@ func createEventParams(projectID uuid.UUID, batchID pgtype.UUID, client ClientIn
 		EventType:        event.EventType,
 		RealTs:           realTS,
 		GameTime:         event.GameTime,
-		SystemID:         location.WorldID,
-		ZoneID:           location.AreaID,
+		RegionID:         location.RegionID,
+		ZoneID:           location.ZoneID,
 		CoordX:           location.Position[0],
 		CoordY:           location.Position[1],
 		CoordZ:           location.Position[2],
@@ -654,8 +654,8 @@ func rawObjectValue(raw json.RawMessage, path string) (any, bool) {
 
 func eventLocation(rawContext json.RawMessage) (EventLocation, error) {
 	location := EventLocation{
-		WorldID:  "unknown",
-		AreaID:   "unknown",
+		RegionID: "unknown",
+		ZoneID:   "unknown",
 		Position: []float64{0, 0, 0},
 	}
 	if len(rawContext) == 0 || string(rawContext) == "null" {
@@ -665,11 +665,11 @@ func eventLocation(rawContext json.RawMessage) (EventLocation, error) {
 	if err := json.Unmarshal(rawContext, &context); err != nil {
 		return location, fmt.Errorf("%w: context must be an object", ErrBadRequest)
 	}
-	if strings.TrimSpace(context.Location.WorldID) != "" {
-		location.WorldID = context.Location.WorldID
+	if strings.TrimSpace(context.Location.RegionID) != "" {
+		location.RegionID = context.Location.RegionID
 	}
-	if strings.TrimSpace(context.Location.AreaID) != "" {
-		location.AreaID = context.Location.AreaID
+	if strings.TrimSpace(context.Location.ZoneID) != "" {
+		location.ZoneID = context.Location.ZoneID
 	}
 	if len(context.Location.Position) > 0 {
 		location.Position = context.Location.Position

@@ -106,7 +106,7 @@ function AddProjectWizard({
   const [eventDays, setEventDays] = useState("730");
   const [reportDays, setReportDays] = useState("1095");
   const [accessLogDays, setAccessLogDays] = useState("14");
-  const [systemsOverlay, setSystemsOverlay] = useState("");
+  const [spatialEnabled, setSpatialEnabled] = useState(true);
   const [zoneExtentM, setZoneExtentM] = useState("30000");
   const [zoneCellM, setZoneCellM] = useState("300");
   const [reportStatusesValue, setReportStatusesValue] = useState(reportStatuses.join(", "));
@@ -154,7 +154,7 @@ function AddProjectWizard({
         access_log_days: parsePositiveInt(accessLogDays, 14),
       },
       map_config: {
-        systems_overlay: systemsOverlay.trim(),
+        spatial_enabled: spatialEnabled,
         zone_extent_m: parsePositiveInt(zoneExtentM, 30000),
         zone_heatmap_cell_m: parsePositiveInt(zoneCellM, 300),
       },
@@ -214,7 +214,7 @@ function AddProjectWizard({
             </Panel>
             <Panel>
               <div className="grid gap-3">
-                <Input label="Systems overlay" value={systemsOverlay} onChange={setSystemsOverlay} />
+                <Checkbox label="Spatial maps enabled" checked={spatialEnabled} onChange={setSpatialEnabled} />
                 <div className="grid gap-3 md:grid-cols-2">
                   <Input label="Zone extent m" value={zoneExtentM} onChange={setZoneExtentM} />
                   <Input label="Heatmap cell m" value={zoneCellM} onChange={setZoneCellM} />

@@ -83,8 +83,8 @@ The full-suite target writes Godot logs to `godot/.godot-test/`.
    }, {
    	"context": {
    		"location": {
-   			"world_id": "lave",
-   			"area_id": "lave_primary",
+   			"region_id": "lave",
+   			"zone_id": "lave_primary",
    			"position": [1240.5, -80.0, 330.2],
    		},
    	},
@@ -151,8 +151,8 @@ FlightRecorderTelemetry.submit_bug_report(
 	{
 		"context": {
 			"location": {
-				"world_id": "reorte",
-				"area_id": "reorte_open",
+				"region_id": "reorte",
+				"zone_id": "reorte_open",
 				"position": [4200.1, 0.0, -810.3],
 			},
 		},

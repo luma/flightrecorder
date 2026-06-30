@@ -68,7 +68,7 @@ func _on_emit_events_pressed() -> void:
 
 	var base_context := {
 		"game_time": Time.get_ticks_msec() / 1000,
-		"system_id": "lave",
+		"region_id": "lave",
 		"zone_id": "lave_primary",
 		"coordinates": [1240.5, -80.0, 330.2],
 		"credits": 48200,
@@ -93,7 +93,7 @@ func _on_emit_events_pressed() -> void:
 		{ "cause": "demo_button" },
 		{
 			"game_time": Time.get_ticks_msec() / 1000,
-			"system_id": "reorte",
+			"region_id": "reorte",
 			"zone_id": "reorte_open",
 			"coordinates": [4200.1, 0.0, -810.3],
 			"credits": 48000,
@@ -113,7 +113,7 @@ func _on_submit_report_pressed() -> void:
 	var screenshot: String = _telemetry.capture_viewport_png_base64()
 	var context := {
 		"game_time": Time.get_ticks_msec() / 1000,
-		"system_id": "reorte",
+		"region_id": "reorte",
 		"zone_id": "reorte_open",
 		"coordinates": [4200.1, 0.0, -810.3],
 		"credits": 48200,

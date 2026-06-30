@@ -17,8 +17,8 @@
       "game_time": 1843200,
       "context": {
         "location": {
-          "world_id": "lave",
-          "area_id": "lave_primary",
+          "region_id": "lave",
+          "zone_id": "lave_primary",
           "position": [1240.5, -80.0, 330.2]
         }
       },

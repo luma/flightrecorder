@@ -29,7 +29,7 @@ INSERT INTO events (
     event_type,
     real_ts,
     game_time,
-    system_id,
+    region_id,
     zone_id,
     coord_x,
     coord_y,

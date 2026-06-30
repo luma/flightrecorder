@@ -18,7 +18,7 @@ const tabs = [
   "Overview",
   "Events",
   "Trace",
-  "Galaxy",
+  "Regions",
   "Zone",
   "Funnels",
   "Reports",
@@ -42,7 +42,7 @@ interface Filters {
   from: string;
   to: string;
   eventType: string;
-  systemID: string;
+  regionID: string;
   zoneID: string;
   playerID: string;
   gameVersion: string;
@@ -68,7 +68,7 @@ export default function Dashboard() {
       ...prev,
       projectID,
       eventType: "",
-      systemID: "",
+      regionID: "",
       zoneID: "",
       playerID: "",
       fieldKey: "",
@@ -91,7 +91,7 @@ export default function Dashboard() {
     setParam(params, "from", filters.from);
     setParam(params, "to", filters.to);
     setParam(params, "event_type", filters.eventType);
-    setParam(params, "system_id", filters.systemID);
+    setParam(params, "region_id", filters.regionID);
     setParam(params, "zone_id", filters.zoneID);
     setParam(params, "player_id", filters.playerID);
     setParam(params, "game_version", filters.gameVersion);
@@ -131,16 +131,17 @@ export default function Dashboard() {
     queryKey: ["settings", filters.projectID],
     queryFn: () => api.settings(filters.projectID),
   });
-  const systemHeatmap = useQuery({
-    enabled: hasProject,
-    queryKey: ["system-heatmap", adminFilters],
-    queryFn: () => api.systemHeatmap(adminFilters),
+  const spatialEnabled = settings.data?.project.map_config.spatial_enabled !== false;
+  const regionHeatmap = useQuery({
+    enabled: hasProject && spatialEnabled,
+    queryKey: ["region-heatmap", adminFilters],
+    queryFn: () => api.regionHeatmap(adminFilters),
   });
-  const firstSystem = filters.systemID || systemHeatmap.data?.cells[0]?.system_id || "lave";
+  const firstRegion = filters.regionID || regionHeatmap.data?.cells[0]?.region_id || "unknown";
   const zoneHeatmap = useQuery({
-    enabled: hasProject,
-    queryKey: ["zone-heatmap", adminFilters, firstSystem],
-    queryFn: () => api.zoneHeatmap({ ...adminFilters, system_id: firstSystem }),
+    enabled: hasProject && spatialEnabled,
+    queryKey: ["zone-heatmap", adminFilters, firstRegion],
+    queryFn: () => api.zoneHeatmap({ ...adminFilters, region_id: firstRegion }),
   });
   const funnels = useQuery({
     enabled: hasProject,
@@ -168,11 +169,11 @@ export default function Dashboard() {
     if (activeTab === "Reports") return reports.data?.reports ?? [];
     if (activeTab === "Schema") return eventTypes.data?.event_types ?? [];
     if (activeTab === "Funnels") return funnels.data?.funnels ?? [];
-    if (activeTab === "Galaxy") return systemHeatmap.data?.cells ?? [];
+    if (activeTab === "Regions") return regionHeatmap.data?.cells ?? [];
     if (activeTab === "Zone") return zoneHeatmap.data?.cells ?? [];
     if (activeTab === "Trace") return trace.data?.events ?? [];
     return events.data?.events ?? [];
-  }, [activeTab, eventTypes.data, events.data, funnels.data, reports.data, systemHeatmap.data, trace.data, zoneHeatmap.data]);
+  }, [activeTab, eventTypes.data, events.data, funnels.data, reports.data, regionHeatmap.data, trace.data, zoneHeatmap.data]);
 
   const exportRows = (format: ExportFormat) => {
     exportData(`${activeTab.toLowerCase()}-${filters.projectID}.${format}`, currentRows, format, adminFilters);
@@ -182,6 +183,8 @@ export default function Dashboard() {
     setFilters((prev) => ({ ...prev, [key]: value }));
   };
   const projectName = settings.data?.project.display_name || filters.projectID;
+  const spatialTabs: Tab[] = ["Regions", "Zone"];
+  const visibleTabs = tabs.filter((tab) => spatialEnabled || !spatialTabs.includes(tab));
 
   return (
     <div className="space-y-5">
@@ -206,7 +209,7 @@ export default function Dashboard() {
       />
 
       <nav className="flex flex-wrap gap-2">
-        {tabs.map((tab) => (
+        {visibleTabs.map((tab) => (
           <button
             key={tab}
             type="button"
@@ -237,11 +240,11 @@ export default function Dashboard() {
           queryFields={settings.data?.project.query_fields ?? []}
         />
       ) : null}
-      {activeTab === "Galaxy" ? (
+      {activeTab === "Regions" ? (
         <HeatmapTable
-          cells={systemHeatmap.data?.cells ?? []}
+          cells={regionHeatmap.data?.cells ?? []}
           onSelect={(cell) => {
-            setFilter("systemID", cell.system_id);
+            setFilter("regionID", cell.region_id);
             setFilter("eventType", cell.event_type);
             setActiveTab("Zone");
           }}
@@ -323,7 +326,7 @@ function FilterBar({
           options={["", ...eventTypes.map((eventType) => eventType.event_type)]}
           onChange={(value) => setFilter("eventType", value)}
         />
-        <Input label="System" value={filters.systemID} onChange={(value) => setFilter("systemID", value)} />
+        <Input label="Region" value={filters.regionID} onChange={(value) => setFilter("regionID", value)} />
         <Input label="Zone" value={filters.zoneID} onChange={(value) => setFilter("zoneID", value)} />
         <Input label="Player" value={filters.playerID} onChange={(value) => setFilter("playerID", value)} />
         <Select
@@ -389,11 +392,11 @@ function EventsTable({
   const visibleFields = queryFields.slice(0, 4);
   return (
     <Table
-      headers={["Type", "Player", "System", "Zone", ...visibleFields.map((field) => field.label || field.key), "Version", "Time", "Actions"]}
+      headers={["Type", "Player", "Region", "Zone", ...visibleFields.map((field) => field.label || field.key), "Version", "Time", "Actions"]}
       rows={events.map((event) => [
         event.event_type,
         event.player_id,
-        event.system_id,
+        event.region_id,
         event.zone_id,
         ...visibleFields.map((field) => formatFieldValue(event.fields?.[field.key])),
         event.game_version,
@@ -417,10 +420,10 @@ function TraceTable({ playerID, events, queryFields }: { playerID?: string; even
         {playerID ? <button type="button" onClick={() => copyText(playerID)} className="link-button">Copy Player</button> : null}
       </div>
       <Table
-        headers={["Type", "System", "Zone", ...visibleFields.map((field) => field.label || field.key), "Game time", "Time", "Payload"]}
+        headers={["Type", "Region", "Zone", ...visibleFields.map((field) => field.label || field.key), "Game time", "Time", "Payload"]}
         rows={events.map((event) => [
           event.event_type,
-          event.system_id,
+          event.region_id,
           event.zone_id,
           ...visibleFields.map((field) => formatFieldValue(event.fields?.[field.key])),
           String(event.game_time),
@@ -435,9 +438,9 @@ function TraceTable({ playerID, events, queryFields }: { playerID?: string; even
 function HeatmapTable({ cells, onSelect }: { cells: HeatmapCell[]; onSelect: (cell: HeatmapCell) => void }) {
   return (
     <Table
-      headers={["System", "Zone", "Grid", "Type", "Count", "Actions"]}
+      headers={["Region", "Zone", "Grid", "Type", "Count", "Actions"]}
       rows={cells.map((cell) => [
-        cell.system_id,
+        cell.region_id,
         cell.zone_id ?? "",
         cell.grid_x === undefined ? "" : `${cell.grid_x}, ${cell.grid_z}`,
         cell.event_type,
@@ -475,7 +478,7 @@ function ReportsTable({
 }) {
   return (
     <Table
-      headers={["Details", "Report", "Status", "Labels", "Mood", "Notes", "Player", "System", "Created", "Trace"]}
+      headers={["Details", "Report", "Status", "Labels", "Mood", "Notes", "Player", "Region", "Created", "Trace"]}
       rows={reports.map((report) => [
         <button type="button" onClick={() => onOpen(report)} className="btn-secondary">Open</button>,
         <button type="button" onClick={() => onOpen(report)} className="link-button">{report.report_id}</button>,
@@ -484,7 +487,7 @@ function ReportsTable({
         report.mood_label,
         report.notes_preview,
         report.player_id,
-        report.system_id,
+        report.region_id,
         report.created_at,
         <button type="button" onClick={() => onTrace(report.player_id)} className="link-button">Trace</button>,
       ])}
@@ -646,7 +649,7 @@ function EventDrawer({
           rows={[
             ["Event ID", event.id],
             ["Player", event.player_id],
-            ["System", event.system_id],
+            ["Region", event.region_id],
             ["Zone", event.zone_id],
             ["Version", event.game_version],
             ["Channel", event.build_channel],
@@ -723,7 +726,7 @@ function ReportDrawer({
               ["Status", report.status],
               ["Mood", `${report.mood} ${report.mood_label}`],
               ["Player", report.player_id],
-              ["System", report.system_id],
+              ["Region", report.region_id],
               ["Zone", report.zone_id],
               ["Created", report.created_at],
             ]}
@@ -887,7 +890,7 @@ function toAdminFilters(filters: Filters): AdminFilters {
     from: filters.from,
     to: filters.to,
     event_type: filters.eventType,
-    system_id: filters.systemID,
+    region_id: filters.regionID,
     zone_id: filters.zoneID,
     player_id: filters.playerID,
     game_version: filters.gameVersion,
@@ -912,7 +915,7 @@ function filtersFromURL(projectFallback: string): Filters {
     from: params.get("from") || isoDaysAgo(30),
     to: params.get("to") || new Date().toISOString(),
     eventType: params.get("event_type") || "",
-    systemID: params.get("system_id") || "",
+    regionID: params.get("region_id") || "",
     zoneID: params.get("zone_id") || "",
     playerID: params.get("player_id") || "",
     gameVersion: params.get("game_version") || "",
