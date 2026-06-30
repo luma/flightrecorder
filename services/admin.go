@@ -265,29 +265,79 @@ type ProjectSummary struct {
 }
 
 type ProjectSettings struct {
-	ProjectID       string          `json:"project_id"`
-	DisplayName     string          `json:"display_name"`
-	ValidationMode  string          `json:"validation_mode"`
-	IngestConfig    json.RawMessage `json:"ingest_config"`
-	RetentionConfig json.RawMessage `json:"retention_config"`
-	MapConfig       json.RawMessage `json:"map_config"`
-	ReportConfig    json.RawMessage `json:"report_config"`
-	EventGroups     json.RawMessage `json:"event_groups"`
-	QueryFields     json.RawMessage `json:"query_fields"`
-	Funnels         json.RawMessage `json:"funnels"`
+	ProjectID       string                 `json:"project_id"`
+	DisplayName     string                 `json:"display_name"`
+	ValidationMode  string                 `json:"validation_mode"`
+	IngestConfig    ProjectIngestConfig    `json:"ingest_config"`
+	RetentionConfig ProjectRetentionConfig `json:"retention_config"`
+	MapConfig       ProjectMapConfig       `json:"map_config"`
+	ReportConfig    ProjectReportConfig    `json:"report_config"`
+	EventGroups     map[string][]string    `json:"event_groups"`
+	QueryFields     []QueryFieldDefinition `json:"query_fields"`
+	Funnels         []FunnelDefinition     `json:"funnels"`
 }
 
 type CreateProjectRequest struct {
-	ProjectID       string          `json:"project_id"`
-	DisplayName     string          `json:"display_name"`
-	ValidationMode  string          `json:"validation_mode"`
-	IngestConfig    json.RawMessage `json:"ingest_config"`
-	RetentionConfig json.RawMessage `json:"retention_config"`
-	MapConfig       json.RawMessage `json:"map_config"`
-	ReportConfig    json.RawMessage `json:"report_config"`
-	EventGroups     json.RawMessage `json:"event_groups"`
-	QueryFields     json.RawMessage `json:"query_fields"`
-	Funnels         json.RawMessage `json:"funnels"`
+	ProjectID       string                      `json:"project_id"`
+	DisplayName     string                      `json:"display_name"`
+	ValidationMode  string                      `json:"validation_mode"`
+	IngestConfig    ProjectIngestConfigInput    `json:"ingest_config"`
+	RetentionConfig ProjectRetentionConfigInput `json:"retention_config"`
+	MapConfig       ProjectMapConfigInput       `json:"map_config"`
+	ReportConfig    ProjectReportConfigInput    `json:"report_config"`
+	EventGroups     map[string][]string         `json:"event_groups"`
+	QueryFields     []QueryFieldDefinition      `json:"query_fields"`
+	Funnels         []FunnelDefinition          `json:"funnels"`
+}
+
+type ProjectIngestConfigInput struct {
+	MaxEventsPerBatch       *int  `json:"max_events_per_batch,omitempty"`
+	AcceptGzip              *bool `json:"accept_gzip,omitempty"`
+	AllowUnknownEventTypes  *bool `json:"allow_unknown_event_types,omitempty"`
+	AllowScreenshotFailures *bool `json:"allow_screenshot_failures,omitempty"`
+}
+
+type ProjectIngestConfig struct {
+	MaxEventsPerBatch       int  `json:"max_events_per_batch"`
+	AcceptGzip              bool `json:"accept_gzip"`
+	AllowUnknownEventTypes  bool `json:"allow_unknown_event_types"`
+	AllowScreenshotFailures bool `json:"allow_screenshot_failures"`
+}
+
+type ProjectRetentionConfigInput struct {
+	EventDays     *int `json:"event_days,omitempty"`
+	ReportDays    *int `json:"report_days,omitempty"`
+	AccessLogDays *int `json:"access_log_days,omitempty"`
+}
+
+type ProjectRetentionConfig struct {
+	EventDays     int `json:"event_days"`
+	ReportDays    int `json:"report_days"`
+	AccessLogDays int `json:"access_log_days"`
+}
+
+type ProjectMapConfigInput struct {
+	SpatialEnabled   *bool `json:"spatial_enabled,omitempty"`
+	ZoneExtentM      *int  `json:"zone_extent_m,omitempty"`
+	ZoneHeatmapCellM *int  `json:"zone_heatmap_cell_m,omitempty"`
+}
+
+type ProjectMapConfig struct {
+	SpatialEnabled   bool `json:"spatial_enabled"`
+	ZoneExtentM      int  `json:"zone_extent_m"`
+	ZoneHeatmapCellM int  `json:"zone_heatmap_cell_m"`
+}
+
+type ProjectReportConfigInput struct {
+	Statuses         []string `json:"statuses,omitempty"`
+	Labels           []string `json:"labels,omitempty"`
+	RateLimitSeconds *int     `json:"rate_limit_seconds,omitempty"`
+}
+
+type ProjectReportConfig struct {
+	Statuses         []string `json:"statuses"`
+	Labels           []string `json:"labels"`
+	RateLimitSeconds int      `json:"rate_limit_seconds"`
 }
 
 type IngestTokenSummary struct {
@@ -352,18 +402,7 @@ func (s *adminService) CreateProject(ctx context.Context, req CreateProjectReque
 	if err != nil {
 		return ProjectSettings{}, err
 	}
-	return ProjectSettings{
-		ProjectID:       row.ProjectKey,
-		DisplayName:     row.DisplayName,
-		ValidationMode:  row.ValidationMode,
-		IngestConfig:    row.IngestConfig,
-		RetentionConfig: row.RetentionConfig,
-		MapConfig:       row.MapConfig,
-		ReportConfig:    row.ReportConfig,
-		EventGroups:     row.EventGroups,
-		QueryFields:     row.QueryFields,
-		Funnels:         row.Funnels,
-	}, nil
+	return projectSettingsFromRaw(rawProjectSettingsFromUpsertRow(row)), nil
 }
 
 func (s *adminService) Summary(ctx context.Context, filter TimeProjectFilter) (SummaryResponse, error) {
@@ -678,10 +717,14 @@ func (s *adminService) Funnels(ctx context.Context, filter TimeProjectFilter) (F
 	if err != nil {
 		return FunnelsResponse{}, err
 	}
-	if err := validateProjectFunnels(project.QueryFields, project.Funnels); err != nil {
+	fieldList, err := projectQueryFields(project.QueryFields)
+	if err != nil {
 		return FunnelsResponse{}, err
 	}
-	fieldDefs, err := queryFieldMap(project.QueryFields)
+	if err := validateProjectFunnels(fieldList, defs); err != nil {
+		return FunnelsResponse{}, err
+	}
+	fieldDefs, err := queryFieldMap(fieldList)
 	if err != nil {
 		return FunnelsResponse{}, err
 	}
@@ -942,19 +985,8 @@ func (s *adminService) Settings(ctx context.Context, projectKey string) (Setting
 		tokens = append(tokens, ingestTokenSummary(row.ID, row.Name, row.Enabled, row.ExpiresAt, row.LastUsedAt, row.CreatedAt))
 	}
 	return SettingsResponse{
-		Project: ProjectSettings{
-			ProjectID:       settings.ProjectKey,
-			DisplayName:     settings.DisplayName,
-			ValidationMode:  settings.ValidationMode,
-			IngestConfig:    settings.IngestConfig,
-			RetentionConfig: settings.RetentionConfig,
-			MapConfig:       settings.MapConfig,
-			ReportConfig:    settings.ReportConfig,
-			EventGroups:     settings.EventGroups,
-			QueryFields:     settings.QueryFields,
-			Funnels:         settings.Funnels,
-		},
-		Tokens: tokens,
+		Project: projectSettingsFromRaw(rawProjectSettingsFromSettingsRow(settings)),
+		Tokens:  tokens,
 	}, nil
 }
 
@@ -1040,6 +1072,74 @@ func requiredProjectKey(projectKey string) string {
 	return strings.TrimSpace(projectKey)
 }
 
+type normalizedProjectConfig struct {
+	IngestConfig    ProjectIngestConfig
+	RetentionConfig ProjectRetentionConfig
+	MapConfig       ProjectMapConfig
+	ReportConfig    ProjectReportConfig
+	EventGroups     map[string][]string
+	QueryFields     []QueryFieldDefinition
+	Funnels         []FunnelDefinition
+}
+
+type rawProjectSettings struct {
+	ProjectKey      string
+	DisplayName     string
+	ValidationMode  string
+	IngestConfig    json.RawMessage
+	RetentionConfig json.RawMessage
+	MapConfig       json.RawMessage
+	ReportConfig    json.RawMessage
+	EventGroups     json.RawMessage
+	QueryFields     json.RawMessage
+	Funnels         json.RawMessage
+}
+
+func rawProjectSettingsFromUpsertRow(row dbq.AdminUpsertProjectRow) rawProjectSettings {
+	return rawProjectSettings{
+		ProjectKey:      row.ProjectKey,
+		DisplayName:     row.DisplayName,
+		ValidationMode:  row.ValidationMode,
+		IngestConfig:    row.IngestConfig,
+		RetentionConfig: row.RetentionConfig,
+		MapConfig:       row.MapConfig,
+		ReportConfig:    row.ReportConfig,
+		EventGroups:     row.EventGroups,
+		QueryFields:     row.QueryFields,
+		Funnels:         row.Funnels,
+	}
+}
+
+func rawProjectSettingsFromSettingsRow(row dbq.AdminProjectSettingsRow) rawProjectSettings {
+	return rawProjectSettings{
+		ProjectKey:      row.ProjectKey,
+		DisplayName:     row.DisplayName,
+		ValidationMode:  row.ValidationMode,
+		IngestConfig:    row.IngestConfig,
+		RetentionConfig: row.RetentionConfig,
+		MapConfig:       row.MapConfig,
+		ReportConfig:    row.ReportConfig,
+		EventGroups:     row.EventGroups,
+		QueryFields:     row.QueryFields,
+		Funnels:         row.Funnels,
+	}
+}
+
+func projectSettingsFromRaw(row rawProjectSettings) ProjectSettings {
+	return ProjectSettings{
+		ProjectID:       row.ProjectKey,
+		DisplayName:     row.DisplayName,
+		ValidationMode:  row.ValidationMode,
+		IngestConfig:    readIngestConfig(row.IngestConfig),
+		RetentionConfig: readRetentionConfig(row.RetentionConfig),
+		MapConfig:       readMapConfig(row.MapConfig),
+		ReportConfig:    readReportConfig(row.ReportConfig),
+		EventGroups:     readEventGroups(row.EventGroups),
+		QueryFields:     readQueryFields(row.QueryFields),
+		Funnels:         readFunnels(row.Funnels),
+	}
+}
+
 func createProjectParams(req CreateProjectRequest) (dbq.AdminUpsertProjectParams, error) {
 	projectKey := strings.TrimSpace(req.ProjectID)
 	if projectKey == "" {
@@ -1060,39 +1160,36 @@ func createProjectParams(req CreateProjectRequest) (dbq.AdminUpsertProjectParams
 		return dbq.AdminUpsertProjectParams{}, fmt.Errorf("%w: validation_mode must be warn or strict", ErrBadRequest)
 	}
 
-	ingestConfig, err := normalizeJSONConfig("ingest_config", req.IngestConfig, defaultIngestConfigJSON, "object")
+	config, err := normalizeProjectConfig(req)
 	if err != nil {
 		return dbq.AdminUpsertProjectParams{}, err
 	}
-	retentionConfig, err := normalizeJSONConfig("retention_config", req.RetentionConfig, defaultRetentionConfigJSON, "object")
+	ingestConfig, err := marshalProjectJSON("ingest_config", config.IngestConfig)
 	if err != nil {
 		return dbq.AdminUpsertProjectParams{}, err
 	}
-	mapConfig, err := normalizeJSONConfig("map_config", req.MapConfig, defaultMapConfigJSON, "object")
+	retentionConfig, err := marshalProjectJSON("retention_config", config.RetentionConfig)
 	if err != nil {
 		return dbq.AdminUpsertProjectParams{}, err
 	}
-	reportConfig, err := normalizeJSONConfig("report_config", req.ReportConfig, defaultReportConfigJSON, "object")
+	mapConfig, err := marshalProjectJSON("map_config", config.MapConfig)
 	if err != nil {
 		return dbq.AdminUpsertProjectParams{}, err
 	}
-	eventGroups, err := normalizeJSONConfig("event_groups", req.EventGroups, defaultEventGroupsJSON, "object")
+	reportConfig, err := marshalProjectJSON("report_config", config.ReportConfig)
 	if err != nil {
 		return dbq.AdminUpsertProjectParams{}, err
 	}
-	queryFields, err := normalizeJSONConfig("query_fields", req.QueryFields, defaultQueryFieldsJSON, "array")
+	eventGroups, err := marshalProjectJSON("event_groups", config.EventGroups)
 	if err != nil {
 		return dbq.AdminUpsertProjectParams{}, err
 	}
-	funnels, err := normalizeJSONConfig("funnels", req.Funnels, defaultFunnelsJSON, "array")
+	queryFields, err := marshalProjectJSON("query_fields", config.QueryFields)
 	if err != nil {
 		return dbq.AdminUpsertProjectParams{}, err
 	}
-
-	if err := validateQueryFields(queryFields); err != nil {
-		return dbq.AdminUpsertProjectParams{}, err
-	}
-	if err := validateProjectFunnels(queryFields, funnels); err != nil {
+	funnels, err := marshalProjectJSON("funnels", config.Funnels)
+	if err != nil {
 		return dbq.AdminUpsertProjectParams{}, err
 	}
 
@@ -1126,47 +1223,300 @@ func validProjectKey(value string) bool {
 	return true
 }
 
-func normalizeJSONConfig(name string, value json.RawMessage, fallback string, wantKind string) (json.RawMessage, error) {
-	trimmed := strings.TrimSpace(string(value))
-	if trimmed == "" {
-		trimmed = fallback
+func normalizeProjectConfig(req CreateProjectRequest) (normalizedProjectConfig, error) {
+	ingestConfig, err := normalizeIngestConfig(req.IngestConfig)
+	if err != nil {
+		return normalizedProjectConfig{}, err
 	}
-	if !json.Valid([]byte(trimmed)) {
-		return nil, fmt.Errorf("%w: %s must be valid JSON", ErrBadRequest, name)
+	retentionConfig, err := normalizeRetentionConfig(req.RetentionConfig)
+	if err != nil {
+		return normalizedProjectConfig{}, err
 	}
-	var decoded any
-	if err := json.Unmarshal([]byte(trimmed), &decoded); err != nil {
-		return nil, fmt.Errorf("%w: %s must be valid JSON", ErrBadRequest, name)
+	mapConfig, err := normalizeMapConfig(req.MapConfig)
+	if err != nil {
+		return normalizedProjectConfig{}, err
 	}
-	switch wantKind {
-	case "object":
-		if _, ok := decoded.(map[string]any); !ok {
-			return nil, fmt.Errorf("%w: %s must be a JSON object", ErrBadRequest, name)
-		}
-	case "array":
-		if _, ok := decoded.([]any); !ok {
-			return nil, fmt.Errorf("%w: %s must be a JSON array", ErrBadRequest, name)
-		}
+	reportConfig, err := normalizeReportConfig(req.ReportConfig)
+	if err != nil {
+		return normalizedProjectConfig{}, err
 	}
-	return json.RawMessage(trimmed), nil
+	eventGroups, err := normalizeEventGroups(req.EventGroups)
+	if err != nil {
+		return normalizedProjectConfig{}, err
+	}
+	queryFields, err := normalizeQueryFields(req.QueryFields)
+	if err != nil {
+		return normalizedProjectConfig{}, err
+	}
+	funnels := req.Funnels
+	if funnels == nil {
+		funnels = []FunnelDefinition{}
+	}
+	if err := validateProjectFunnels(queryFields, funnels); err != nil {
+		return normalizedProjectConfig{}, err
+	}
+	return normalizedProjectConfig{
+		IngestConfig:    ingestConfig,
+		RetentionConfig: retentionConfig,
+		MapConfig:       mapConfig,
+		ReportConfig:    reportConfig,
+		EventGroups:     eventGroups,
+		QueryFields:     queryFields,
+		Funnels:         funnels,
+	}, nil
 }
 
-func validateQueryFields(value json.RawMessage) error {
-	var fields []QueryFieldDefinition
-	if err := json.Unmarshal(value, &fields); err != nil {
-		return fmt.Errorf("%w: query_fields must match the project field schema", ErrBadRequest)
+func marshalProjectJSON[T any](name string, value T) (json.RawMessage, error) {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %s must be valid JSON", ErrBadRequest, name)
 	}
-	for _, field := range fields {
-		if strings.TrimSpace(field.Key) == "" || strings.TrimSpace(field.Source) == "" {
-			return fmt.Errorf("%w: query_fields require key and source", ErrBadRequest)
+	return json.RawMessage(raw), nil
+}
+
+func readIngestConfig(raw json.RawMessage) ProjectIngestConfig {
+	var input ProjectIngestConfigInput
+	if err := unmarshalProjectConfig(raw, &input); err != nil {
+		return defaultIngestConfig
+	}
+	config, err := normalizeIngestConfig(input)
+	if err != nil {
+		return defaultIngestConfig
+	}
+	return config
+}
+
+func readRetentionConfig(raw json.RawMessage) ProjectRetentionConfig {
+	var input ProjectRetentionConfigInput
+	if err := unmarshalProjectConfig(raw, &input); err != nil {
+		return defaultRetentionConfig
+	}
+	config, err := normalizeRetentionConfig(input)
+	if err != nil {
+		return defaultRetentionConfig
+	}
+	return config
+}
+
+func readMapConfig(raw json.RawMessage) ProjectMapConfig {
+	var input ProjectMapConfigInput
+	if err := unmarshalProjectConfig(raw, &input); err != nil {
+		return defaultMapConfig
+	}
+	config, err := normalizeMapConfig(input)
+	if err != nil {
+		return defaultMapConfig
+	}
+	return config
+}
+
+func readReportConfig(raw json.RawMessage) ProjectReportConfig {
+	var input ProjectReportConfigInput
+	if err := unmarshalProjectConfig(raw, &input); err != nil {
+		return defaultReportConfig
+	}
+	config, err := normalizeReportConfig(input)
+	if err != nil {
+		return defaultReportConfig
+	}
+	return config
+}
+
+func readEventGroups(raw json.RawMessage) map[string][]string {
+	var input map[string][]string
+	if err := unmarshalProjectConfig(raw, &input); err != nil {
+		return map[string][]string{}
+	}
+	groups, err := normalizeEventGroups(input)
+	if err != nil {
+		return map[string][]string{}
+	}
+	return groups
+}
+
+func readQueryFields(raw json.RawMessage) []QueryFieldDefinition {
+	var input []QueryFieldDefinition
+	if err := unmarshalProjectConfig(raw, &input); err != nil {
+		return []QueryFieldDefinition{}
+	}
+	fields, err := normalizeQueryFields(input)
+	if err != nil {
+		return []QueryFieldDefinition{}
+	}
+	return fields
+}
+
+func readFunnels(raw json.RawMessage) []FunnelDefinition {
+	var funnels []FunnelDefinition
+	if err := unmarshalProjectConfig(raw, &funnels); err != nil || funnels == nil {
+		return []FunnelDefinition{}
+	}
+	return funnels
+}
+
+func unmarshalProjectConfig(raw json.RawMessage, out any) error {
+	if len(strings.TrimSpace(string(raw))) == 0 {
+		return nil
+	}
+	return json.Unmarshal(raw, out)
+}
+
+func normalizeIngestConfig(input ProjectIngestConfigInput) (ProjectIngestConfig, error) {
+	config := defaultIngestConfig
+	if input.MaxEventsPerBatch != nil {
+		config.MaxEventsPerBatch = *input.MaxEventsPerBatch
+	}
+	if input.AcceptGzip != nil {
+		config.AcceptGzip = *input.AcceptGzip
+	}
+	if input.AllowUnknownEventTypes != nil {
+		config.AllowUnknownEventTypes = *input.AllowUnknownEventTypes
+	}
+	if input.AllowScreenshotFailures != nil {
+		config.AllowScreenshotFailures = *input.AllowScreenshotFailures
+	}
+	if config.MaxEventsPerBatch <= 0 {
+		return ProjectIngestConfig{}, fmt.Errorf("%w: max_events_per_batch must be positive", ErrBadRequest)
+	}
+	return config, nil
+}
+
+func normalizeRetentionConfig(input ProjectRetentionConfigInput) (ProjectRetentionConfig, error) {
+	config := defaultRetentionConfig
+	if input.EventDays != nil {
+		config.EventDays = *input.EventDays
+	}
+	if input.ReportDays != nil {
+		config.ReportDays = *input.ReportDays
+	}
+	if input.AccessLogDays != nil {
+		config.AccessLogDays = *input.AccessLogDays
+	}
+	if config.EventDays < 0 || config.ReportDays < 0 || config.AccessLogDays < 0 {
+		return ProjectRetentionConfig{}, fmt.Errorf("%w: retention days must be non-negative", ErrBadRequest)
+	}
+	return config, nil
+}
+
+func normalizeMapConfig(input ProjectMapConfigInput) (ProjectMapConfig, error) {
+	config := defaultMapConfig
+	if input.SpatialEnabled != nil {
+		config.SpatialEnabled = *input.SpatialEnabled
+	}
+	if input.ZoneExtentM != nil {
+		config.ZoneExtentM = *input.ZoneExtentM
+	}
+	if input.ZoneHeatmapCellM != nil {
+		config.ZoneHeatmapCellM = *input.ZoneHeatmapCellM
+	}
+	if config.ZoneExtentM < 0 || config.ZoneHeatmapCellM < 0 {
+		return ProjectMapConfig{}, fmt.Errorf("%w: map dimensions must be non-negative", ErrBadRequest)
+	}
+	return config, nil
+}
+
+func normalizeReportConfig(input ProjectReportConfigInput) (ProjectReportConfig, error) {
+	config := defaultReportConfig
+	if input.Statuses != nil {
+		statuses, err := normalizeUniqueStrings("report statuses", input.Statuses, false)
+		if err != nil {
+			return ProjectReportConfig{}, err
 		}
-		switch strings.TrimSpace(field.Type) {
+		config.Statuses = statuses
+	}
+	if input.Labels != nil {
+		labels, err := normalizeUniqueStrings("report labels", input.Labels, true)
+		if err != nil {
+			return ProjectReportConfig{}, err
+		}
+		config.Labels = labels
+	}
+	if input.RateLimitSeconds != nil {
+		config.RateLimitSeconds = *input.RateLimitSeconds
+	}
+	if config.RateLimitSeconds < 0 {
+		return ProjectReportConfig{}, fmt.Errorf("%w: rate_limit_seconds must be non-negative", ErrBadRequest)
+	}
+	return config, nil
+}
+
+func normalizeEventGroups(input map[string][]string) (map[string][]string, error) {
+	if input == nil {
+		return map[string][]string{}, nil
+	}
+	out := make(map[string][]string, len(input))
+	seenGroups := map[string]bool{}
+	for group, events := range input {
+		group = strings.TrimSpace(group)
+		if group == "" {
+			return nil, fmt.Errorf("%w: event_groups require non-empty group names", ErrBadRequest)
+		}
+		if seenGroups[group] {
+			return nil, fmt.Errorf("%w: duplicate event group name", ErrBadRequest)
+		}
+		seenGroups[group] = true
+		seen := map[string]bool{}
+		normalizedEvents := make([]string, 0, len(events))
+		for _, eventType := range events {
+			eventType = strings.TrimSpace(eventType)
+			if eventType == "" {
+				return nil, fmt.Errorf("%w: event_groups require non-empty event types", ErrBadRequest)
+			}
+			if seen[eventType] {
+				return nil, fmt.Errorf("%w: duplicate event type in event group", ErrBadRequest)
+			}
+			seen[eventType] = true
+			normalizedEvents = append(normalizedEvents, eventType)
+		}
+		out[group] = normalizedEvents
+	}
+	return out, nil
+}
+
+func normalizeQueryFields(fields []QueryFieldDefinition) ([]QueryFieldDefinition, error) {
+	if fields == nil {
+		fields = []QueryFieldDefinition{}
+	}
+	out := make([]QueryFieldDefinition, 0, len(fields))
+	seen := map[string]bool{}
+	for _, field := range fields {
+		field.Key = strings.TrimSpace(field.Key)
+		field.Source = strings.TrimSpace(field.Source)
+		field.Type = strings.TrimSpace(field.Type)
+		field.Label = strings.TrimSpace(field.Label)
+		if field.Key == "" || field.Source == "" {
+			return nil, fmt.Errorf("%w: query_fields require key and source", ErrBadRequest)
+		}
+		if !validQueryFieldKey(field.Key) {
+			return nil, fmt.Errorf("%w: query_fields key may use non-empty dotted segments without whitespace", ErrBadRequest)
+		}
+		if seen[field.Key] {
+			return nil, fmt.Errorf("%w: duplicate query_fields key", ErrBadRequest)
+		}
+		seen[field.Key] = true
+		if !validQueryFieldSource(field.Source) {
+			return nil, fmt.Errorf("%w: query_fields source must use context, metrics, dimensions, or payload plus a dotted path", ErrBadRequest)
+		}
+		switch field.Type {
 		case "string", "number", "bool":
 		default:
-			return fmt.Errorf("%w: query_fields type must be string, number, or bool", ErrBadRequest)
+			return nil, fmt.Errorf("%w: query_fields type must be string, number, or bool", ErrBadRequest)
 		}
+		if field.Label == "" {
+			field.Label = field.Key
+		}
+		field.Aggregations = trimmedStrings(field.Aggregations)
+		out = append(out, field)
 	}
-	return nil
+	return out, nil
+}
+
+func projectQueryFields(value json.RawMessage) ([]QueryFieldDefinition, error) {
+	var fields []QueryFieldDefinition
+	if err := json.Unmarshal(value, &fields); err != nil {
+		return nil, fmt.Errorf("%w: query_fields must match the project field schema", ErrBadRequest)
+	}
+	return fields, nil
 }
 
 func projectFunnels(value json.RawMessage) ([]FunnelDefinition, error) {
@@ -1177,11 +1527,7 @@ func projectFunnels(value json.RawMessage) ([]FunnelDefinition, error) {
 	return funnels, nil
 }
 
-func validateProjectFunnels(queryFields json.RawMessage, value json.RawMessage) error {
-	funnels, err := projectFunnels(value)
-	if err != nil {
-		return err
-	}
+func validateProjectFunnels(queryFields []QueryFieldDefinition, funnels []FunnelDefinition) error {
 	fields, err := queryFieldMap(queryFields)
 	if err != nil {
 		return err
@@ -1249,6 +1595,63 @@ func validateProjectFunnels(queryFields json.RawMessage, value json.RawMessage) 
 	return nil
 }
 
+func normalizeUniqueStrings(name string, values []string, allowEmpty bool) ([]string, error) {
+	if allowEmpty && len(values) == 0 {
+		return []string{}, nil
+	}
+	out := make([]string, 0, len(values))
+	seen := map[string]bool{}
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			return nil, fmt.Errorf("%w: %s require non-empty values", ErrBadRequest, name)
+		}
+		if seen[value] {
+			return nil, fmt.Errorf("%w: duplicate %s value", ErrBadRequest, name)
+		}
+		seen[value] = true
+		out = append(out, value)
+	}
+	if !allowEmpty && len(out) == 0 {
+		return nil, fmt.Errorf("%w: %s require at least one value", ErrBadRequest, name)
+	}
+	return out, nil
+}
+
+func validQueryFieldKey(value string) bool {
+	if value == "" || hasWhitespace(value) {
+		return false
+	}
+	for _, segment := range strings.Split(value, ".") {
+		if segment == "" {
+			return false
+		}
+	}
+	return true
+}
+
+func validQueryFieldSource(value string) bool {
+	root, path, ok := strings.Cut(value, ".")
+	if !ok || path == "" {
+		return false
+	}
+	switch root {
+	case "context", "metrics", "dimensions", "payload":
+	default:
+		return false
+	}
+	return validQueryFieldKey(path)
+}
+
+func hasWhitespace(value string) bool {
+	for _, r := range value {
+		if r == ' ' || r == '\t' || r == '\n' || r == '\r' {
+			return true
+		}
+	}
+	return false
+}
+
 func validateFunnelMatcher(match FunnelEventMatcher, fields map[string]QueryFieldDefinition) error {
 	matcherCount := 0
 	if strings.TrimSpace(match.EventType) != "" {
@@ -1289,11 +1692,7 @@ func validateFunnelMatcher(match FunnelEventMatcher, fields map[string]QueryFiel
 	return nil
 }
 
-func queryFieldMap(queryFields json.RawMessage) (map[string]QueryFieldDefinition, error) {
-	var fields []QueryFieldDefinition
-	if err := json.Unmarshal(queryFields, &fields); err != nil {
-		return nil, fmt.Errorf("%w: query_fields must match the project field schema", ErrBadRequest)
-	}
+func queryFieldMap(fields []QueryFieldDefinition) (map[string]QueryFieldDefinition, error) {
 	out := make(map[string]QueryFieldDefinition, len(fields))
 	for _, field := range fields {
 		key := strings.TrimSpace(field.Key)
@@ -1570,39 +1969,30 @@ func trimmedStrings(values []string) []string {
 	return out
 }
 
-const defaultIngestConfigJSON = `{
-  "max_events_per_batch": 50,
-  "accept_gzip": true,
-  "allow_unknown_event_types": true,
-  "allow_screenshot_failures": true
-}`
+var defaultIngestConfig = ProjectIngestConfig{
+	MaxEventsPerBatch:       50,
+	AcceptGzip:              true,
+	AllowUnknownEventTypes:  true,
+	AllowScreenshotFailures: true,
+}
 
-const defaultRetentionConfigJSON = `{
-  "event_days": 730,
-  "report_days": 1095,
-  "access_log_days": 14
-}`
+var defaultRetentionConfig = ProjectRetentionConfig{
+	EventDays:     730,
+	ReportDays:    1095,
+	AccessLogDays: 14,
+}
 
-const defaultMapConfigJSON = `{
-  "spatial_enabled": true,
-  "zone_extent_m": 30000,
-  "zone_heatmap_cell_m": 300
-}`
+var defaultMapConfig = ProjectMapConfig{
+	SpatialEnabled:   true,
+	ZoneExtentM:      30000,
+	ZoneHeatmapCellM: 300,
+}
 
-const defaultReportConfigJSON = `{
-  "statuses": ["new", "seen", "reproduced", "fixed", "wont_fix", "needs_more_info"],
-  "labels": ["bug", "sentiment", "balance", "mission", "combat", "economy", "ui"],
-  "rate_limit_seconds": 60
-}`
-
-const defaultEventGroupsJSON = `{
-  "lifecycle": ["new_game", "game_continue", "game_exit", "dock", "undock"],
-  "report": ["bug_report"]
-}`
-
-const defaultQueryFieldsJSON = `[]`
-
-const defaultFunnelsJSON = `[]`
+var defaultReportConfig = ProjectReportConfig{
+	Statuses:         []string{"new", "seen", "reproduced", "fixed", "wont_fix", "needs_more_info"},
+	Labels:           []string{"bug", "sentiment", "balance", "mission", "combat", "economy", "ui"},
+	RateLimitSeconds: 60,
+}
 
 func newIngestToken() (string, string, error) {
 	var raw [32]byte
@@ -1691,9 +2081,9 @@ func projectFieldFilter(queryFields json.RawMessage, fieldKey *string, fieldValu
 	}
 
 	key := strings.TrimSpace(*fieldKey)
-	var fields []QueryFieldDefinition
-	if err := json.Unmarshal(queryFields, &fields); err != nil {
-		return adminFieldFilter{}, false, fmt.Errorf("project query_fields must be an array: %w", err)
+	fields, err := projectQueryFields(queryFields)
+	if err != nil {
+		return adminFieldFilter{}, false, err
 	}
 
 	for _, field := range fields {
