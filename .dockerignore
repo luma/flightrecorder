@@ -1,0 +1,11 @@
+bin/
+var/
+reports/
+.git/
+.env
+.env.*
+!.env.example
+web-vite/node_modules/
+web-vite/dist/
+*.test
+**/*_test.go
