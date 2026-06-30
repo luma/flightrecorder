@@ -26,19 +26,21 @@ type Config struct {
 	WebBaseURL         string        `env:"WEB_BASE_URL" envDefault:"http://localhost:3000"` // Frontend URL for redirects
 
 	// PostgreSQL configuration
-	PostgresHost           string        `env:"POSTGRES_HOST" envDefault:"localhost"`
-	PostgresPort           int           `env:"POSTGRES_PORT" envDefault:"5432"`
-	PostgresUser           string        `env:"POSTGRES_USER" envDefault:"flightrecorder"`
-	PostgresPassword       string        `env:"POSTGRES_PASSWORD,notEmpty" envDefault:"flightrecorder"`
-	PostgresDB             string        `env:"POSTGRES_DB" envDefault:"flightrecorder"`
-	PostgresSSLMode        string        `env:"POSTGRES_SSL_MODE" envDefault:"disable"`
-	PostgresSSLRootCert    string        `env:"POSTGRES_SSL_ROOT_CERT"`
-	PostgresSSLNegotiation string        `env:"POSTGRES_SSL_NEGOTIATION"` // "direct" for PlanetScale, empty for standard PostgreSQL
-	PostgresMigrateHost    string        `env:"POSTGRES_MIGRATE_HOST"`    // Direct PG host for migrations (bypasses PgBouncer)
-	PostgresMigratePort    int           `env:"POSTGRES_MIGRATE_PORT"`    // Direct PG port for migrations (bypasses PgBouncer)
-	PostgresMaxConns       int           `env:"POSTGRES_MAX_CONNECTIONS" envDefault:"30"`
-	PostgresMinConns       int           `env:"POSTGRES_MIN_CONNECTIONS" envDefault:"5"`
-	PostgresConnTimeout    time.Duration `env:"POSTGRES_CONN_TIMEOUT" envDefault:"10s"`
+	PostgresHost            string        `env:"POSTGRES_HOST" envDefault:"localhost"`
+	PostgresPort            int           `env:"POSTGRES_PORT" envDefault:"5432"`
+	PostgresUser            string        `env:"POSTGRES_USER" envDefault:"flightrecorder"`
+	PostgresPassword        string        `env:"POSTGRES_PASSWORD,notEmpty" envDefault:"flightrecorder"`
+	PostgresDB              string        `env:"POSTGRES_DB" envDefault:"flightrecorder"`
+	PostgresSSLMode         string        `env:"POSTGRES_SSL_MODE" envDefault:"disable"`
+	PostgresSSLRootCert     string        `env:"POSTGRES_SSL_ROOT_CERT"`
+	PostgresSSLNegotiation  string        `env:"POSTGRES_SSL_NEGOTIATION"` // "direct" for PlanetScale, empty for standard PostgreSQL
+	PostgresMigrateHost     string        `env:"POSTGRES_MIGRATE_HOST"`    // Direct PG host for migrations (bypasses PgBouncer)
+	PostgresMigratePort     int           `env:"POSTGRES_MIGRATE_PORT"`    // Direct PG port for migrations (bypasses PgBouncer)
+	PostgresMigrateMaxConns int           `env:"POSTGRES_MIGRATE_MAX_CONNECTIONS" envDefault:"2"`
+	PostgresMigrateMinConns int           `env:"POSTGRES_MIGRATE_MIN_CONNECTIONS" envDefault:"1"`
+	PostgresMaxConns        int           `env:"POSTGRES_MAX_CONNECTIONS" envDefault:"30"`
+	PostgresMinConns        int           `env:"POSTGRES_MIN_CONNECTIONS" envDefault:"5"`
+	PostgresConnTimeout     time.Duration `env:"POSTGRES_CONN_TIMEOUT" envDefault:"10s"`
 
 	// Feature Flags
 	EnablePprof bool `env:"ENABLE_PPROF" envDefault:"false"`

@@ -13,6 +13,7 @@ import (
 
 	"github.com/luma/flightrecorder/api"
 	"github.com/luma/flightrecorder/db"
+	"github.com/luma/flightrecorder/db/schema"
 	"github.com/luma/flightrecorder/env"
 	"github.com/luma/flightrecorder/services"
 )
@@ -49,6 +50,17 @@ func start(parentCtx context.Context, cmd *cli.Command, cfg *env.Config, log *sl
 	log.Info("Starting Service",
 		"env", cfg.Environment,
 		"api_addr", cfg.APIPort)
+
+	if cfg.PostgresPassword != "" {
+		log.Info("Running database migrations")
+		if err := schema.Up(cfg.PostgresMigrateURL(), -1, schema.PoolConfig{
+			MaxConns: int32(cfg.PostgresMigrateMaxConns),
+			MinConns: int32(cfg.PostgresMigrateMinConns),
+		}); err != nil {
+			return fmt.Errorf("failed to migrate database: %w", err)
+		}
+		log.Info("Database migrations complete")
+	}
 
 	// Create database pool
 	dbConnectCtx, dbCancel := context.WithTimeout(ctx, cfg.PostgresConnTimeout)
