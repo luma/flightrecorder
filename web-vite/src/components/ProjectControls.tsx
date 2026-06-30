@@ -13,7 +13,6 @@ import {
   FunnelsBuilder,
   QueryFieldsBuilder,
   eventGroupsFromDrafts,
-  eventGroupsToDrafts,
   normalizeFunnel,
   normalizeQueryField,
   validateEventGroupDrafts,
@@ -137,9 +136,9 @@ export function AddProjectWizard({
   const [reportStatusesValue, setReportStatusesValue] = useState(reportStatuses.join(", "));
   const [reportLabelsValue, setReportLabelsValue] = useState("bug, sentiment, balance, mission, combat, economy, ui");
   const [rateLimitSeconds, setRateLimitSeconds] = useState("60");
-  const [eventGroups, setEventGroups] = useState<EventGroupDraft[]>(() => eventGroupsToDrafts(defaultEventGroups));
-  const [queryFields, setQueryFields] = useState<QueryField[]>(defaultQueryFields);
-  const [funnels, setFunnels] = useState<FunnelDefinition[]>(defaultFunnels);
+  const [eventGroups, setEventGroups] = useState<EventGroupDraft[]>([]);
+  const [queryFields, setQueryFields] = useState<QueryField[]>([]);
+  const [funnels, setFunnels] = useState<FunnelDefinition[]>([]);
   const [validationError, setValidationError] = useState("");
 
   const createProject = useMutation({
@@ -353,49 +352,3 @@ function parsePositiveInt(value: string, fallback: number) {
 function splitLabels(value: string) {
   return value.split(",").map((label) => label.trim()).filter(Boolean);
 }
-
-const defaultEventGroups: Record<string, string[]> = {
-  lifecycle: ["new_game", "game_continue", "game_exit", "dock", "undock"],
-  economy: ["buy_commodity", "sell_commodity", "buy_intel", "sell_intel", "purchase_ship", "change_equipment", "clear_bounty"],
-  mission: ["take_mission", "abandon_mission", "complete_mission", "complete_mission_objective", "mission_complication"],
-  combat: ["player_death", "player_kills_npc", "npc_enters_combat_with_player", "player_enters_combat_with_npc"],
-  legal: ["receive_bounty", "faction_rep_change"],
-  report: ["bug_report"],
-};
-
-const defaultQueryFields: QueryField[] = [
-  {
-    key: "economy.credits",
-    source: "metrics.economy.credits",
-    type: "number",
-    label: "Credits",
-    filterable: true,
-    aggregations: ["min", "max", "avg"],
-  },
-  {
-    key: "ship.hull_pct",
-    source: "metrics.ship.hull_pct",
-    type: "number",
-    label: "Hull",
-    filterable: true,
-    aggregations: ["min", "avg", "histogram"],
-  },
-  {
-    key: "ship.shield_pct",
-    source: "metrics.ship.shield_pct",
-    type: "number",
-    label: "Shield",
-    filterable: true,
-    aggregations: ["min", "avg", "histogram"],
-  },
-  {
-    key: "ship.id",
-    source: "dimensions.ship.id",
-    type: "string",
-    label: "Ship",
-    filterable: true,
-    aggregations: ["count"],
-  },
-];
-
-const defaultFunnels: FunnelDefinition[] = [];
