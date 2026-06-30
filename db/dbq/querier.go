@@ -11,7 +11,6 @@ import (
 )
 
 type Querier interface {
-	AdminCommanderTrace(ctx context.Context, arg AdminCommanderTraceParams) ([]AdminCommanderTraceRow, error)
 	AdminCreateIngestToken(ctx context.Context, arg AdminCreateIngestTokenParams) (AdminCreateIngestTokenRow, error)
 	AdminCreateReportNote(ctx context.Context, arg AdminCreateReportNoteParams) (AdminCreateReportNoteRow, error)
 	AdminEventTypes(ctx context.Context, projectID uuid.UUID) ([]AdminEventTypesRow, error)
@@ -24,6 +23,7 @@ type Querier interface {
 	AdminListReportNotes(ctx context.Context, reportID uuid.UUID) ([]AdminListReportNotesRow, error)
 	AdminListReports(ctx context.Context, arg AdminListReportsParams) ([]AdminListReportsRow, error)
 	AdminListReportsByLabel(ctx context.Context, arg AdminListReportsByLabelParams) ([]AdminListReportsByLabelRow, error)
+	AdminPlayerTrace(ctx context.Context, arg AdminPlayerTraceParams) ([]AdminPlayerTraceRow, error)
 	AdminProjectSettings(ctx context.Context, projectKey string) (AdminProjectSettingsRow, error)
 	AdminReportTrace(ctx context.Context, arg AdminReportTraceParams) ([]AdminReportTraceRow, error)
 	AdminSetIngestTokenEnabled(ctx context.Context, arg AdminSetIngestTokenEnabledParams) (AdminSetIngestTokenEnabledRow, error)
@@ -34,7 +34,7 @@ type Querier interface {
 	AdminUpsertProject(ctx context.Context, arg AdminUpsertProjectParams) (AdminUpsertProjectRow, error)
 	AdminZoneHeatmap(ctx context.Context, arg AdminZoneHeatmapParams) ([]AdminZoneHeatmapRow, error)
 	AdminZoneHeatmapByField(ctx context.Context, arg AdminZoneHeatmapByFieldParams) ([]AdminZoneHeatmapByFieldRow, error)
-	CountRecentBugReportsByCommander(ctx context.Context, arg CountRecentBugReportsByCommanderParams) (int64, error)
+	CountRecentBugReportsByPlayer(ctx context.Context, arg CountRecentBugReportsByPlayerParams) (int64, error)
 	CreateBatch(ctx context.Context, arg CreateBatchParams) (CreateBatchRow, error)
 	CreateBugReport(ctx context.Context, arg CreateBugReportParams) (CreateBugReportRow, error)
 	CreateEvent(ctx context.Context, arg CreateEventParams) (uuid.UUID, error)

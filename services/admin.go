@@ -26,7 +26,7 @@ type Admin interface {
 	CreateProject(ctx context.Context, req CreateProjectRequest) (ProjectSettings, error)
 	Summary(ctx context.Context, filter TimeProjectFilter) (SummaryResponse, error)
 	ListEvents(ctx context.Context, filter EventListFilter) ([]EventSummary, error)
-	CommanderTrace(ctx context.Context, projectKey string, commanderID string, limit int32) ([]TraceEvent, error)
+	PlayerTrace(ctx context.Context, projectKey string, playerID string, limit int32) ([]TraceEvent, error)
 	SystemHeatmap(ctx context.Context, filter HeatmapFilter) ([]SystemHeatmapCell, error)
 	ZoneHeatmap(ctx context.Context, filter ZoneHeatmapFilter) ([]ZoneHeatmapCell, error)
 	Funnels(ctx context.Context, filter TimeProjectFilter) (FunnelsResponse, error)
@@ -51,7 +51,7 @@ type EventListFilter struct {
 	EventType    *string
 	SystemID     *string
 	ZoneID       *string
-	CommanderID  *string
+	PlayerID     *string
 	GameVersion  *string
 	BuildChannel *string
 	FieldKey     *string
@@ -85,19 +85,19 @@ type ReportListFilter struct {
 }
 
 type SummaryResponse struct {
-	EventCount     int64  `json:"event_count"`
-	CommanderCount int64  `json:"commander_count"`
-	SessionCount   int64  `json:"session_count"`
-	DeathCount     int64  `json:"death_count"`
-	ReportCount    int64  `json:"report_count"`
-	OptInCount     int64  `json:"opt_in_count"` // reserved; AdminSummary query does not return this — always 0
-	From           string `json:"from"`
-	To             string `json:"to"`
+	EventCount   int64  `json:"event_count"`
+	PlayerCount  int64  `json:"player_count"`
+	SessionCount int64  `json:"session_count"`
+	DeathCount   int64  `json:"death_count"`
+	ReportCount  int64  `json:"report_count"`
+	OptInCount   int64  `json:"opt_in_count"` // reserved; AdminSummary query does not return this — always 0
+	From         string `json:"from"`
+	To           string `json:"to"`
 }
 
 type EventSummary struct {
 	ID               string          `json:"id"`
-	CommanderID      string          `json:"commander_id"`
+	PlayerID         string          `json:"player_id"`
 	EventType        string          `json:"event_type"`
 	RealTS           string          `json:"real_ts"`
 	GameTime         int64           `json:"game_time"`
@@ -170,7 +170,7 @@ type ReportSummary struct {
 	NotesPreview        string          `json:"notes_preview"`
 	ScreenshotObjectKey string          `json:"screenshot_object_key,omitempty"`
 	CreatedAt           string          `json:"created_at"`
-	CommanderID         string          `json:"commander_id"`
+	PlayerID            string          `json:"player_id"`
 	RealTS              string          `json:"real_ts"`
 	GameTime            int64           `json:"game_time"`
 	SystemID            string          `json:"system_id"`
@@ -339,13 +339,13 @@ func (s *adminService) Summary(ctx context.Context, filter TimeProjectFilter) (S
 		return SummaryResponse{}, err
 	}
 	return SummaryResponse{
-		EventCount:     row.EventCount,
-		CommanderCount: row.CommanderCount,
-		SessionCount:   row.SessionCount,
-		DeathCount:     row.DeathCount,
-		ReportCount:    row.ReportCount,
-		From:           formatTime(filter.From),
-		To:             formatTime(filter.To),
+		EventCount:   row.EventCount,
+		PlayerCount:  row.PlayerCount,
+		SessionCount: row.SessionCount,
+		DeathCount:   row.DeathCount,
+		ReportCount:  row.ReportCount,
+		From:         formatTime(filter.From),
+		To:           formatTime(filter.To),
 	}, nil
 }
 
@@ -354,7 +354,7 @@ func (s *adminService) ListEvents(ctx context.Context, filter EventListFilter) (
 	if err != nil {
 		return nil, err
 	}
-	commanderID, err := optionalUUIDPtr(filter.CommanderID)
+	playerID, err := optionalUUIDPtr(filter.PlayerID)
 	if err != nil {
 		return nil, err
 	}
@@ -378,7 +378,7 @@ func (s *adminService) ListEvents(ctx context.Context, filter EventListFilter) (
 			EventType:        optionalTextPtr(filter.EventType),
 			SystemID:         optionalTextPtr(filter.SystemID),
 			ZoneID:           optionalTextPtr(filter.ZoneID),
-			CommanderID:      commanderID,
+			PlayerID:         playerID,
 			GameVersion:      optionalTextPtr(filter.GameVersion),
 			BuildChannel:     optionalTextPtr(filter.BuildChannel),
 		})
@@ -389,7 +389,7 @@ func (s *adminService) ListEvents(ctx context.Context, filter EventListFilter) (
 		for _, row := range rows {
 			out = append(out, EventSummary{
 				ID:               row.ID.String(),
-				CommanderID:      row.CommanderID.String(),
+				PlayerID:         row.PlayerID.String(),
 				EventType:        row.EventType,
 				RealTS:           formatTime(row.RealTs),
 				GameTime:         row.GameTime,
@@ -420,7 +420,7 @@ func (s *adminService) ListEvents(ctx context.Context, filter EventListFilter) (
 		EventType:    optionalTextPtr(filter.EventType),
 		SystemID:     optionalTextPtr(filter.SystemID),
 		ZoneID:       optionalTextPtr(filter.ZoneID),
-		CommanderID:  commanderID,
+		PlayerID:     playerID,
 		GameVersion:  optionalTextPtr(filter.GameVersion),
 		BuildChannel: optionalTextPtr(filter.BuildChannel),
 	})
@@ -431,7 +431,7 @@ func (s *adminService) ListEvents(ctx context.Context, filter EventListFilter) (
 	for _, row := range rows {
 		out = append(out, EventSummary{
 			ID:               row.ID.String(),
-			CommanderID:      row.CommanderID.String(),
+			PlayerID:         row.PlayerID.String(),
 			EventType:        row.EventType,
 			RealTS:           formatTime(row.RealTs),
 			GameTime:         row.GameTime,
@@ -454,19 +454,19 @@ func (s *adminService) ListEvents(ctx context.Context, filter EventListFilter) (
 	return out, nil
 }
 
-func (s *adminService) CommanderTrace(ctx context.Context, projectKey string, commanderID string, limit int32) ([]TraceEvent, error) {
+func (s *adminService) PlayerTrace(ctx context.Context, projectKey string, playerID string, limit int32) ([]TraceEvent, error) {
 	project, err := s.loadProject(ctx, projectKey)
 	if err != nil {
 		return nil, err
 	}
-	parsedCommanderID, err := uuid.Parse(commanderID)
+	parsedPlayerID, err := uuid.Parse(playerID)
 	if err != nil {
-		return nil, fmt.Errorf("%w: commander_id must be a UUID", ErrBadRequest)
+		return nil, fmt.Errorf("%w: player_id must be a UUID", ErrBadRequest)
 	}
-	rows, err := s.queries.AdminCommanderTrace(ctx, dbq.AdminCommanderTraceParams{
-		ProjectID:   project.ID,
-		CommanderID: parsedCommanderID,
-		Limit:       clampLimit(limit, 500),
+	rows, err := s.queries.AdminPlayerTrace(ctx, dbq.AdminPlayerTraceParams{
+		ProjectID: project.ID,
+		PlayerID:  parsedPlayerID,
+		Limit:     clampLimit(limit, 500),
 	})
 	if err != nil {
 		return nil, err
@@ -680,7 +680,7 @@ func (s *adminService) ListReports(ctx context.Context, filter ReportListFilter)
 				NotesPreview:        row.NotesPreview,
 				ScreenshotObjectKey: textValue(row.ScreenshotObjectKey),
 				CreatedAt:           formatTime(row.CreatedAt),
-				CommanderID:         row.CommanderID.String(),
+				PlayerID:            row.PlayerID.String(),
 				RealTS:              formatTime(row.RealTs),
 				GameTime:            row.GameTime,
 				SystemID:            row.SystemID,
@@ -713,7 +713,7 @@ func (s *adminService) ListReports(ctx context.Context, filter ReportListFilter)
 			NotesPreview:        row.NotesPreview,
 			ScreenshotObjectKey: textValue(row.ScreenshotObjectKey),
 			CreatedAt:           formatTime(row.CreatedAt),
-			CommanderID:         row.CommanderID.String(),
+			PlayerID:            row.PlayerID.String(),
 			RealTS:              formatTime(row.RealTs),
 			GameTime:            row.GameTime,
 			SystemID:            row.SystemID,
@@ -787,7 +787,7 @@ func (s *adminService) GetReport(ctx context.Context, projectKey string, reportI
 			NotesPreview:        row.NotesPreview,
 			ScreenshotObjectKey: textValue(row.ScreenshotObjectKey),
 			CreatedAt:           formatTime(row.CreatedAt),
-			CommanderID:         row.CommanderID.String(),
+			PlayerID:            row.PlayerID.String(),
 			RealTS:              formatTime(row.RealTs),
 			GameTime:            row.GameTime,
 			SystemID:            row.SystemID,
@@ -1313,7 +1313,7 @@ func optionalUUIDPtr(value *string) (pgtype.UUID, error) {
 	}
 	parsed, err := uuid.Parse(strings.TrimSpace(*value))
 	if err != nil {
-		return pgtype.UUID{}, fmt.Errorf("%w: commander_id must be a UUID", ErrBadRequest)
+		return pgtype.UUID{}, fmt.Errorf("%w: player_id must be a UUID", ErrBadRequest)
 	}
 	return pgtype.UUID{Bytes: parsed, Valid: true}, nil
 }

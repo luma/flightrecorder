@@ -14,23 +14,23 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const countRecentBugReportsByCommander = `-- name: CountRecentBugReportsByCommander :one
+const countRecentBugReportsByPlayer = `-- name: CountRecentBugReportsByPlayer :one
 SELECT count(*)::bigint
 FROM bug_reports br
 JOIN events e ON e.id = br.event_id
 WHERE br.project_id = $1
-  AND e.commander_id = $2
+  AND e.player_id = $2
   AND br.created_at > now() - make_interval(secs => $3)
 `
 
-type CountRecentBugReportsByCommanderParams struct {
-	ProjectID   uuid.UUID `json:"project_id"`
-	CommanderID uuid.UUID `json:"commander_id"`
-	Secs        float64   `json:"secs"`
+type CountRecentBugReportsByPlayerParams struct {
+	ProjectID uuid.UUID `json:"project_id"`
+	PlayerID  uuid.UUID `json:"player_id"`
+	Secs      float64   `json:"secs"`
 }
 
-func (q *Queries) CountRecentBugReportsByCommander(ctx context.Context, arg CountRecentBugReportsByCommanderParams) (int64, error) {
-	row := q.db.QueryRow(ctx, countRecentBugReportsByCommander, arg.ProjectID, arg.CommanderID, arg.Secs)
+func (q *Queries) CountRecentBugReportsByPlayer(ctx context.Context, arg CountRecentBugReportsByPlayerParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countRecentBugReportsByPlayer, arg.ProjectID, arg.PlayerID, arg.Secs)
 	var column_1 int64
 	err := row.Scan(&column_1)
 	return column_1, err
@@ -128,7 +128,7 @@ const createEvent = `-- name: CreateEvent :one
 INSERT INTO events (
     project_id,
     batch_db_id,
-    commander_id,
+    player_id,
     event_type,
     real_ts,
     game_time,
@@ -157,7 +157,7 @@ RETURNING id
 type CreateEventParams struct {
 	ProjectID        uuid.UUID       `json:"project_id"`
 	BatchDbID        pgtype.UUID     `json:"batch_db_id"`
-	CommanderID      uuid.UUID       `json:"commander_id"`
+	PlayerID         uuid.UUID       `json:"player_id"`
 	EventType        string          `json:"event_type"`
 	RealTs           time.Time       `json:"real_ts"`
 	GameTime         int64           `json:"game_time"`
@@ -182,7 +182,7 @@ func (q *Queries) CreateEvent(ctx context.Context, arg CreateEventParams) (uuid.
 	row := q.db.QueryRow(ctx, createEvent,
 		arg.ProjectID,
 		arg.BatchDbID,
-		arg.CommanderID,
+		arg.PlayerID,
 		arg.EventType,
 		arg.RealTs,
 		arg.GameTime,

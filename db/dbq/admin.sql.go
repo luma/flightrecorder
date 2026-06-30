@@ -14,101 +14,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const adminCommanderTrace = `-- name: AdminCommanderTrace :many
-SELECT
-    id,
-    event_type,
-    real_ts,
-    game_time,
-    system_id,
-    zone_id,
-    coord_x,
-    coord_y,
-    coord_z,
-    context,
-    metrics,
-    dimensions,
-    COALESCE(
-        (
-            SELECT jsonb_object_agg(
-                ef.field_key,
-                CASE ef.value_type
-                    WHEN 'number' THEN to_jsonb(ef.number_value)
-                    WHEN 'bool' THEN to_jsonb(ef.bool_value)
-                    ELSE to_jsonb(ef.string_value)
-                END
-            )
-            FROM event_fields ef
-            WHERE ef.event_id = events.id
-        ),
-        '{}'::jsonb
-    )::jsonb AS fields,
-    payload
-FROM events
-WHERE events.project_id = $1
-  AND commander_id = $2
-ORDER BY game_time ASC
-LIMIT $3
-`
-
-type AdminCommanderTraceParams struct {
-	ProjectID   uuid.UUID `json:"project_id"`
-	CommanderID uuid.UUID `json:"commander_id"`
-	Limit       int32     `json:"limit"`
-}
-
-type AdminCommanderTraceRow struct {
-	ID         uuid.UUID       `json:"id"`
-	EventType  string          `json:"event_type"`
-	RealTs     time.Time       `json:"real_ts"`
-	GameTime   int64           `json:"game_time"`
-	SystemID   string          `json:"system_id"`
-	ZoneID     string          `json:"zone_id"`
-	CoordX     float64         `json:"coord_x"`
-	CoordY     float64         `json:"coord_y"`
-	CoordZ     float64         `json:"coord_z"`
-	Context    json.RawMessage `json:"context"`
-	Metrics    json.RawMessage `json:"metrics"`
-	Dimensions json.RawMessage `json:"dimensions"`
-	Fields     json.RawMessage `json:"fields"`
-	Payload    json.RawMessage `json:"payload"`
-}
-
-func (q *Queries) AdminCommanderTrace(ctx context.Context, arg AdminCommanderTraceParams) ([]AdminCommanderTraceRow, error) {
-	rows, err := q.db.Query(ctx, adminCommanderTrace, arg.ProjectID, arg.CommanderID, arg.Limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []AdminCommanderTraceRow{}
-	for rows.Next() {
-		var i AdminCommanderTraceRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.EventType,
-			&i.RealTs,
-			&i.GameTime,
-			&i.SystemID,
-			&i.ZoneID,
-			&i.CoordX,
-			&i.CoordY,
-			&i.CoordZ,
-			&i.Context,
-			&i.Metrics,
-			&i.Dimensions,
-			&i.Fields,
-			&i.Payload,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const adminCreateIngestToken = `-- name: AdminCreateIngestToken :one
 INSERT INTO ingest_tokens (
     project_id,
@@ -229,9 +134,9 @@ func (q *Queries) AdminEventTypes(ctx context.Context, projectID uuid.UUID) ([]A
 }
 
 const adminFunnelCounts = `-- name: AdminFunnelCounts :one
-WITH commander_flags AS (
+WITH player_flags AS (
     SELECT
-        commander_id,
+        player_id,
         bool_or(event_type = 'game_continue') AS continued,
         bool_or(event_type = 'undock') AS undocked,
         bool_or(event_type = 'dock') AS docked,
@@ -246,7 +151,7 @@ WITH commander_flags AS (
     WHERE project_id = $1
       AND real_ts >= $2
       AND real_ts <= $3
-    GROUP BY commander_id
+    GROUP BY player_id
 )
 SELECT
     count(*) FILTER (WHERE continued)::bigint AS onboarding_started,
@@ -261,7 +166,7 @@ SELECT
     count(*) FILTER (WHERE undocked AND docked)::bigint AS station_return_completed,
     count(*) FILTER (WHERE reported)::bigint AS report_started,
     count(*) FILTER (WHERE reported)::bigint AS report_completed
-FROM commander_flags
+FROM player_flags
 `
 
 type AdminFunnelCountsParams struct {
@@ -317,7 +222,7 @@ SELECT
     br.screenshot_object_key,
     br.screenshot_storage_error,
     br.created_at,
-    e.commander_id,
+    e.player_id,
     e.real_ts,
     e.game_time,
     e.system_id,
@@ -351,7 +256,7 @@ type AdminGetReportRow struct {
 	ScreenshotObjectKey    pgtype.Text     `json:"screenshot_object_key"`
 	ScreenshotStorageError pgtype.Text     `json:"screenshot_storage_error"`
 	CreatedAt              time.Time       `json:"created_at"`
-	CommanderID            uuid.UUID       `json:"commander_id"`
+	PlayerID               uuid.UUID       `json:"player_id"`
 	RealTs                 time.Time       `json:"real_ts"`
 	GameTime               int64           `json:"game_time"`
 	SystemID               string          `json:"system_id"`
@@ -379,7 +284,7 @@ func (q *Queries) AdminGetReport(ctx context.Context, arg AdminGetReportParams) 
 		&i.ScreenshotObjectKey,
 		&i.ScreenshotStorageError,
 		&i.CreatedAt,
-		&i.CommanderID,
+		&i.PlayerID,
 		&i.RealTs,
 		&i.GameTime,
 		&i.SystemID,
@@ -398,7 +303,7 @@ func (q *Queries) AdminGetReport(ctx context.Context, arg AdminGetReportParams) 
 const adminListEvents = `-- name: AdminListEvents :many
 SELECT
     id,
-    commander_id,
+    player_id,
     event_type,
     real_ts,
     game_time,
@@ -437,7 +342,7 @@ WHERE events.project_id = $1
   AND ($6::text IS NULL OR event_type = $6)
   AND ($7::text IS NULL OR system_id = $7)
   AND ($8::text IS NULL OR zone_id = $8)
-  AND ($9::uuid IS NULL OR commander_id = $9::uuid)
+  AND ($9::uuid IS NULL OR player_id = $9::uuid)
   AND ($10::text IS NULL OR game_version = $10)
   AND ($11::text IS NULL OR build_channel = $11)
   AND real_ts >= $2
@@ -456,14 +361,14 @@ type AdminListEventsParams struct {
 	EventType    pgtype.Text `json:"event_type"`
 	SystemID     pgtype.Text `json:"system_id"`
 	ZoneID       pgtype.Text `json:"zone_id"`
-	CommanderID  pgtype.UUID `json:"commander_id"`
+	PlayerID     pgtype.UUID `json:"player_id"`
 	GameVersion  pgtype.Text `json:"game_version"`
 	BuildChannel pgtype.Text `json:"build_channel"`
 }
 
 type AdminListEventsRow struct {
 	ID               uuid.UUID       `json:"id"`
-	CommanderID      uuid.UUID       `json:"commander_id"`
+	PlayerID         uuid.UUID       `json:"player_id"`
 	EventType        string          `json:"event_type"`
 	RealTs           time.Time       `json:"real_ts"`
 	GameTime         int64           `json:"game_time"`
@@ -495,7 +400,7 @@ func (q *Queries) AdminListEvents(ctx context.Context, arg AdminListEventsParams
 		arg.EventType,
 		arg.SystemID,
 		arg.ZoneID,
-		arg.CommanderID,
+		arg.PlayerID,
 		arg.GameVersion,
 		arg.BuildChannel,
 	)
@@ -508,7 +413,7 @@ func (q *Queries) AdminListEvents(ctx context.Context, arg AdminListEventsParams
 		var i AdminListEventsRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.CommanderID,
+			&i.PlayerID,
 			&i.EventType,
 			&i.RealTs,
 			&i.GameTime,
@@ -542,7 +447,7 @@ func (q *Queries) AdminListEvents(ctx context.Context, arg AdminListEventsParams
 const adminListEventsByField = `-- name: AdminListEventsByField :many
 SELECT
     events.id,
-    commander_id,
+    player_id,
     event_type,
     real_ts,
     game_time,
@@ -591,7 +496,7 @@ WHERE filter_field.project_id = $1
   AND ($12::text IS NULL OR event_type = $12)
   AND ($13::text IS NULL OR system_id = $13)
   AND ($14::text IS NULL OR zone_id = $14)
-  AND ($15::uuid IS NULL OR commander_id = $15::uuid)
+  AND ($15::uuid IS NULL OR player_id = $15::uuid)
   AND ($16::text IS NULL OR game_version = $16)
   AND ($17::text IS NULL OR build_channel = $17)
   AND real_ts >= $2
@@ -616,14 +521,14 @@ type AdminListEventsByFieldParams struct {
 	EventType        pgtype.Text `json:"event_type"`
 	SystemID         pgtype.Text `json:"system_id"`
 	ZoneID           pgtype.Text `json:"zone_id"`
-	CommanderID      pgtype.UUID `json:"commander_id"`
+	PlayerID         pgtype.UUID `json:"player_id"`
 	GameVersion      pgtype.Text `json:"game_version"`
 	BuildChannel     pgtype.Text `json:"build_channel"`
 }
 
 type AdminListEventsByFieldRow struct {
 	ID               uuid.UUID       `json:"id"`
-	CommanderID      uuid.UUID       `json:"commander_id"`
+	PlayerID         uuid.UUID       `json:"player_id"`
 	EventType        string          `json:"event_type"`
 	RealTs           time.Time       `json:"real_ts"`
 	GameTime         int64           `json:"game_time"`
@@ -661,7 +566,7 @@ func (q *Queries) AdminListEventsByField(ctx context.Context, arg AdminListEvent
 		arg.EventType,
 		arg.SystemID,
 		arg.ZoneID,
-		arg.CommanderID,
+		arg.PlayerID,
 		arg.GameVersion,
 		arg.BuildChannel,
 	)
@@ -674,7 +579,7 @@ func (q *Queries) AdminListEventsByField(ctx context.Context, arg AdminListEvent
 		var i AdminListEventsByFieldRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.CommanderID,
+			&i.PlayerID,
 			&i.EventType,
 			&i.RealTs,
 			&i.GameTime,
@@ -846,7 +751,7 @@ SELECT
     br.notes_preview,
     br.screenshot_object_key,
     br.created_at,
-    e.commander_id,
+    e.player_id,
     e.real_ts,
     e.game_time,
     e.system_id,
@@ -881,7 +786,7 @@ type AdminListReportsRow struct {
 	NotesPreview        string          `json:"notes_preview"`
 	ScreenshotObjectKey pgtype.Text     `json:"screenshot_object_key"`
 	CreatedAt           time.Time       `json:"created_at"`
-	CommanderID         uuid.UUID       `json:"commander_id"`
+	PlayerID            uuid.UUID       `json:"player_id"`
 	RealTs              time.Time       `json:"real_ts"`
 	GameTime            int64           `json:"game_time"`
 	SystemID            string          `json:"system_id"`
@@ -916,7 +821,7 @@ func (q *Queries) AdminListReports(ctx context.Context, arg AdminListReportsPara
 			&i.NotesPreview,
 			&i.ScreenshotObjectKey,
 			&i.CreatedAt,
-			&i.CommanderID,
+			&i.PlayerID,
 			&i.RealTs,
 			&i.GameTime,
 			&i.SystemID,
@@ -947,7 +852,7 @@ SELECT
     br.notes_preview,
     br.screenshot_object_key,
     br.created_at,
-    e.commander_id,
+    e.player_id,
     e.real_ts,
     e.game_time,
     e.system_id,
@@ -984,7 +889,7 @@ type AdminListReportsByLabelRow struct {
 	NotesPreview        string          `json:"notes_preview"`
 	ScreenshotObjectKey pgtype.Text     `json:"screenshot_object_key"`
 	CreatedAt           time.Time       `json:"created_at"`
-	CommanderID         uuid.UUID       `json:"commander_id"`
+	PlayerID            uuid.UUID       `json:"player_id"`
 	RealTs              time.Time       `json:"real_ts"`
 	GameTime            int64           `json:"game_time"`
 	SystemID            string          `json:"system_id"`
@@ -1020,7 +925,7 @@ func (q *Queries) AdminListReportsByLabel(ctx context.Context, arg AdminListRepo
 			&i.NotesPreview,
 			&i.ScreenshotObjectKey,
 			&i.CreatedAt,
-			&i.CommanderID,
+			&i.PlayerID,
 			&i.RealTs,
 			&i.GameTime,
 			&i.SystemID,
@@ -1028,6 +933,101 @@ func (q *Queries) AdminListReportsByLabel(ctx context.Context, arg AdminListRepo
 			&i.Context,
 			&i.Metrics,
 			&i.Dimensions,
+			&i.Payload,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const adminPlayerTrace = `-- name: AdminPlayerTrace :many
+SELECT
+    id,
+    event_type,
+    real_ts,
+    game_time,
+    system_id,
+    zone_id,
+    coord_x,
+    coord_y,
+    coord_z,
+    context,
+    metrics,
+    dimensions,
+    COALESCE(
+        (
+            SELECT jsonb_object_agg(
+                ef.field_key,
+                CASE ef.value_type
+                    WHEN 'number' THEN to_jsonb(ef.number_value)
+                    WHEN 'bool' THEN to_jsonb(ef.bool_value)
+                    ELSE to_jsonb(ef.string_value)
+                END
+            )
+            FROM event_fields ef
+            WHERE ef.event_id = events.id
+        ),
+        '{}'::jsonb
+    )::jsonb AS fields,
+    payload
+FROM events
+WHERE events.project_id = $1
+  AND player_id = $2
+ORDER BY game_time ASC
+LIMIT $3
+`
+
+type AdminPlayerTraceParams struct {
+	ProjectID uuid.UUID `json:"project_id"`
+	PlayerID  uuid.UUID `json:"player_id"`
+	Limit     int32     `json:"limit"`
+}
+
+type AdminPlayerTraceRow struct {
+	ID         uuid.UUID       `json:"id"`
+	EventType  string          `json:"event_type"`
+	RealTs     time.Time       `json:"real_ts"`
+	GameTime   int64           `json:"game_time"`
+	SystemID   string          `json:"system_id"`
+	ZoneID     string          `json:"zone_id"`
+	CoordX     float64         `json:"coord_x"`
+	CoordY     float64         `json:"coord_y"`
+	CoordZ     float64         `json:"coord_z"`
+	Context    json.RawMessage `json:"context"`
+	Metrics    json.RawMessage `json:"metrics"`
+	Dimensions json.RawMessage `json:"dimensions"`
+	Fields     json.RawMessage `json:"fields"`
+	Payload    json.RawMessage `json:"payload"`
+}
+
+func (q *Queries) AdminPlayerTrace(ctx context.Context, arg AdminPlayerTraceParams) ([]AdminPlayerTraceRow, error) {
+	rows, err := q.db.Query(ctx, adminPlayerTrace, arg.ProjectID, arg.PlayerID, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AdminPlayerTraceRow{}
+	for rows.Next() {
+		var i AdminPlayerTraceRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.EventType,
+			&i.RealTs,
+			&i.GameTime,
+			&i.SystemID,
+			&i.ZoneID,
+			&i.CoordX,
+			&i.CoordY,
+			&i.CoordZ,
+			&i.Context,
+			&i.Metrics,
+			&i.Dimensions,
+			&i.Fields,
 			&i.Payload,
 		); err != nil {
 			return nil, err
@@ -1102,7 +1102,7 @@ SELECT
 FROM bug_reports br
 JOIN events report_event ON report_event.id = br.event_id
 JOIN events e ON e.project_id = report_event.project_id
-             AND e.commander_id = report_event.commander_id
+             AND e.player_id = report_event.player_id
              AND e.game_time >= report_event.game_time - $3
              AND e.game_time <= report_event.game_time + $3
 WHERE br.project_id = $1
@@ -1200,7 +1200,7 @@ func (q *Queries) AdminSetIngestTokenEnabled(ctx context.Context, arg AdminSetIn
 const adminSummary = `-- name: AdminSummary :one
 SELECT
     count(*)::bigint AS event_count,
-    count(DISTINCT commander_id)::bigint AS commander_count,
+    count(DISTINCT player_id)::bigint AS player_count,
     count(*) FILTER (WHERE event_type = 'game_continue')::bigint AS session_count,
     count(*) FILTER (WHERE event_type = 'player_death')::bigint AS death_count,
     (
@@ -1223,11 +1223,11 @@ type AdminSummaryParams struct {
 }
 
 type AdminSummaryRow struct {
-	EventCount     int64 `json:"event_count"`
-	CommanderCount int64 `json:"commander_count"`
-	SessionCount   int64 `json:"session_count"`
-	DeathCount     int64 `json:"death_count"`
-	ReportCount    int64 `json:"report_count"`
+	EventCount   int64 `json:"event_count"`
+	PlayerCount  int64 `json:"player_count"`
+	SessionCount int64 `json:"session_count"`
+	DeathCount   int64 `json:"death_count"`
+	ReportCount  int64 `json:"report_count"`
 }
 
 func (q *Queries) AdminSummary(ctx context.Context, arg AdminSummaryParams) (AdminSummaryRow, error) {
@@ -1235,7 +1235,7 @@ func (q *Queries) AdminSummary(ctx context.Context, arg AdminSummaryParams) (Adm
 	var i AdminSummaryRow
 	err := row.Scan(
 		&i.EventCount,
-		&i.CommanderCount,
+		&i.PlayerCount,
 		&i.SessionCount,
 		&i.DeathCount,
 		&i.ReportCount,

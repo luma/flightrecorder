@@ -51,7 +51,7 @@ Request:
   "events": [
     {
       "schema_version": 2,
-      "commander_id": "550e8400-e29b-41d4-a716-446655440000",
+      "player_id": "550e8400-e29b-41d4-a716-446655440000",
       "event_type": "dock",
       "real_ts": "2026-06-06T11:42:00Z",
       "game_time": 1843200,
@@ -94,7 +94,7 @@ Response:
 | Field | Type | Required | Notes |
 |---|---|---|---|
 | `schema_version` | integer | yes | Event envelope schema version. Current version is `2`. |
-| `commander_id` | string | yes | Game-generated playthrough/player ID. |
+| `player_id` | string | yes | Game-generated playthrough/player ID. |
 | `event_type` | string | yes | Stable event type name. |
 | `real_ts` | string | yes | Client event time, ISO 8601 UTC. |
 | `game_time` | integer | yes | In-game seconds elapsed. |
@@ -131,7 +131,7 @@ Request:
   },
   "event": {
     "schema_version": 2,
-    "commander_id": "550e8400-e29b-41d4-a716-446655440000",
+    "player_id": "550e8400-e29b-41d4-a716-446655440000",
     "event_type": "bug_report",
     "real_ts": "2026-06-06T11:55:00Z",
     "game_time": 1843200,
@@ -199,8 +199,8 @@ The admin API powers the future Vite dashboard. It returns JSON only.
 | Route | Purpose |
 |---|---|
 | `GET /api/admin/v1/summary` | Time-windowed totals for events, players, sessions, deaths, reports, and opt-in counts. |
-| `GET /api/admin/v1/events` | Paginated event search by type, system, zone, commander, version, channel, configured field, and time range. |
-| `GET /api/admin/v1/commanders/{commander_id}/trace` | Chronological playthrough trace. |
+| `GET /api/admin/v1/events` | Paginated event search by type, system, zone, player, version, channel, configured field, and time range. |
+| `GET /api/admin/v1/players/{player_id}/trace` | Chronological playthrough trace. |
 | `GET /api/admin/v1/heatmap/systems` | Per-system event counts for galaxy map colouring, with the same event/version/channel/configured-field filters. |
 | `GET /api/admin/v1/heatmap/zones` | Binned zone-space `(x, z)` counts, with the same event/version/channel/configured-field filters. |
 | `GET /api/admin/v1/funnels` | Named funnel results. |

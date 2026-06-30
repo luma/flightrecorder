@@ -11,7 +11,7 @@ var _ = Describe("ingest validation", func() {
 	validEvent := func(eventType string) EventEnvelope {
 		return EventEnvelope{
 			SchemaVersion: 2,
-			CommanderID:   "550e8400-e29b-41d4-a716-446655440000",
+			PlayerID:      "550e8400-e29b-41d4-a716-446655440000",
 			EventType:     eventType,
 			RealTS:        "2026-06-06T11:42:00Z",
 			GameTime:      1843200,
@@ -35,7 +35,7 @@ var _ = Describe("ingest validation", func() {
 
 	It("counts malformed events as rejected without dropping valid siblings", func() {
 		bad := validEvent("dock")
-		bad.CommanderID = "not-a-uuid"
+		bad.PlayerID = "not-a-uuid"
 
 		valid, rejected := validateEvents([]EventEnvelope{validEvent("dock"), bad})
 
@@ -83,7 +83,7 @@ var _ = Describe("ingest validation", func() {
 		Expect(json.Unmarshal(
 			[]byte(`{
 				"schema_version":2,
-				"commander_id":"550e8400-e29b-41d4-a716-446655440000",
+				"player_id":"550e8400-e29b-41d4-a716-446655440000",
 				"event_type":"dock",
 				"real_ts":"2026-06-06T11:42:00Z",
 				"game_time":1843200,
@@ -108,7 +108,7 @@ var _ = Describe("ingest validation", func() {
 		Expect(json.Unmarshal(
 			[]byte(`{
 				"schema_version":2,
-				"commander_id":"550e8400-e29b-41d4-a716-446655440000",
+				"player_id":"550e8400-e29b-41d4-a716-446655440000",
 				"event_type":"bug_report",
 				"real_ts":"2026-06-06T11:42:00Z",
 				"game_time":1843200,

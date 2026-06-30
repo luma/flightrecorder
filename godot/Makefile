@@ -1,4 +1,4 @@
-GODOT ?= $(HOME)/godot/Godot_v4.6.2-stable_linux.x86_64
+GODOT ?= godot
 GUT_FLAGS ?= -gconfig=res://.gutconfig.json
 TEST_ARTIFACT_DIR ?= $(CURDIR)/.godot-test
 GODOT_FLAGS ?= --headless --path "$(CURDIR)" --log-file "$(TEST_ARTIFACT_DIR)/godot.log"

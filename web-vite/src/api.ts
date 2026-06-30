@@ -38,7 +38,7 @@ function queryString(params: object): string {
 
 export interface Summary {
   event_count: number;
-  commander_count: number;
+  player_count: number;
   session_count: number;
   death_count: number;
   report_count: number;
@@ -49,7 +49,7 @@ export interface Summary {
 
 export interface EventSummary {
   id: string;
-  commander_id: string;
+  player_id: string;
   event_type: string;
   real_ts: string;
   game_time: number;
@@ -92,7 +92,7 @@ export interface ReportSummary {
   notes_preview: string;
   screenshot_object_key?: string;
   created_at: string;
-  commander_id: string;
+  player_id: string;
   system_id: string;
   zone_id: string;
   context?: Record<string, unknown>;
@@ -156,7 +156,7 @@ export interface AdminFilters {
   event_type?: string;
   system_id?: string;
   zone_id?: string;
-  commander_id?: string;
+  player_id?: string;
   game_version?: string;
   build_channel?: string;
   field_key?: string;
@@ -232,9 +232,9 @@ export const api = {
   summary: (filters: AdminFilters) => apiFetch<Summary>(`/summary${queryString(filters)}`),
   events: (filters: AdminFilters) =>
     apiFetch<{ events: EventSummary[] }>(`/events${queryString({ ...filters, limit: filters.limit ?? 100 })}`),
-  commanderTrace: (projectID: string, commanderID: string) =>
+  playerTrace: (projectID: string, playerID: string) =>
     apiFetch<{ events: TraceEvent[] }>(
-      `/commanders/${encodeURIComponent(commanderID)}/trace?project_id=${encodeURIComponent(projectID)}&limit=100`,
+      `/players/${encodeURIComponent(playerID)}/trace?project_id=${encodeURIComponent(projectID)}&limit=100`,
     ),
   systemHeatmap: (filters: AdminFilters) =>
     apiFetch<{ cells: HeatmapCell[] }>(`/heatmap/systems${queryString(filters)}`),

@@ -28,7 +28,7 @@ const PROJECTS_DIR := "user://flightrecorder/projects"
 @export var use_gzip := false
 @export var report_cooldown_seconds := 60.0
 
-var commander_id := ""
+var player_id := ""
 
 var _wal_mutex := Mutex.new()
 var _state_mutex := Mutex.new()
@@ -40,7 +40,7 @@ var _last_report_msec := -1
 
 func _ready() -> void:
 	_ensure_project_dir()
-	commander_id = _load_or_create_commander_id()
+	player_id = _load_or_create_player_id()
 	_start_sender()
 
 
@@ -62,8 +62,8 @@ func configure(options: Dictionary) -> void:
 	opt_in_enabled = bool(options.get("opt_in_enabled", opt_in_enabled))
 	batch_size = max(1, int(options.get("batch_size", batch_size)))
 	use_gzip = bool(options.get("use_gzip", use_gzip))
-	if project_id != previous_project_id or commander_id == "":
-		commander_id = _load_or_create_commander_id()
+	if project_id != previous_project_id or player_id == "":
+		player_id = _load_or_create_player_id()
 
 
 ## Stores the player's telemetry preference. When disabled, new events and
@@ -158,7 +158,7 @@ func build_event(event_type: String, payload: Dictionary = { }, context: Diction
 	var dimensions := _dimensions_from_context(context)
 	return {
 		"schema_version": SCHEMA_VERSION,
-		"commander_id": str(context.get("commander_id", commander_id)),
+		"player_id": str(context.get("player_id", player_id)),
 		"event_type": event_type,
 		"real_ts": _utc_now(),
 		"game_time": int(context.get("game_time", 0)),
@@ -442,8 +442,8 @@ func _wal_path() -> String:
 	return "%s/wal.ndjson" % _project_dir()
 
 
-func _commander_id_path() -> String:
-	return "%s/commander_id.txt" % _project_dir()
+func _player_id_path() -> String:
+	return "%s/player_id.txt" % _project_dir()
 
 
 func _safe_project_id() -> String:
@@ -460,16 +460,16 @@ func _safe_project_id() -> String:
 	return output
 
 
-func _load_or_create_commander_id() -> String:
+func _load_or_create_player_id() -> String:
 	_ensure_project_dir()
-	var commander_id_path := _commander_id_path()
-	if FileAccess.file_exists(commander_id_path):
-		var existing := FileAccess.get_file_as_string(commander_id_path).strip_edges()
+	var player_id_path := _player_id_path()
+	if FileAccess.file_exists(player_id_path):
+		var existing := FileAccess.get_file_as_string(player_id_path).strip_edges()
 		if existing != "":
 			return existing
 
 	var new_id := _uuid_v4()
-	var file := FileAccess.open(commander_id_path, FileAccess.WRITE)
+	var file := FileAccess.open(player_id_path, FileAccess.WRITE)
 	if file != null:
 		file.store_string(new_id)
 		file.flush()
@@ -490,7 +490,7 @@ func _event_context_from_context(context: Dictionary) -> Dictionary:
 		return context["context"].duplicate(true)
 
 	var event_context := context.duplicate(true)
-	event_context.erase("commander_id")
+	event_context.erase("player_id")
 	event_context.erase("game_time")
 	event_context.erase("metrics")
 	event_context.erase("dimensions")

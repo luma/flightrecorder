@@ -290,8 +290,8 @@ curl -sS -X POST http://localhost:8080/v1/bug-reports \
   --data @examples/bug-report.valid.json
 ```
 
-Bug reports are rate-limited by commander. If you resubmit the same report
-fixture repeatedly, wait at least 60 seconds or edit the fixture's commander and
+Bug reports are rate-limited by player. If you resubmit the same report
+fixture repeatedly, wait at least 60 seconds or edit the fixture's player and
 report IDs.
 
 Refresh the admin UI and use the `Events`, `Reports`, `Trace`, `Galaxy`, `Zone`,
@@ -336,7 +336,7 @@ make test
 
 ## Design Principles
 
-- **Games first.** Coordinates, zones, missions, commander traces, and screenshot
+- **Games first.** Coordinates, zones, missions, player traces, and screenshot
   reports are first-class concerns.
 - **Privacy by default.** The collector is built around project-scoped ingest
   tokens and game-generated player IDs, not platform accounts or machine

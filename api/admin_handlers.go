@@ -22,7 +22,7 @@ func registerAdminRoutes(adminGroup *route.RouterGroup, adminAuth services.Admin
 	protected := adminGroup.Group("", auth.RequireAdmin(adminAuth, log))
 	protected.GET("/summary", makeAdminSummary(adminSvc))
 	protected.GET("/events", makeAdminEvents(adminSvc))
-	protected.GET("/commanders/:commander_id/trace", makeAdminCommanderTrace(adminSvc))
+	protected.GET("/players/:player_id/trace", makeAdminPlayerTrace(adminSvc))
 	protected.GET("/heatmap/systems", makeAdminSystemHeatmap(adminSvc))
 	protected.GET("/heatmap/zones", makeAdminZoneHeatmap(adminSvc))
 	protected.GET("/funnels", makeAdminFunnels(adminSvc))
@@ -116,7 +116,7 @@ func makeAdminEvents(adminSvc services.Admin) app.HandlerFunc {
 			EventType:         queryPtr(c, "event_type"),
 			SystemID:          queryPtr(c, "system_id"),
 			ZoneID:            queryPtr(c, "zone_id"),
-			CommanderID:       queryPtr(c, "commander_id"),
+			PlayerID:          queryPtr(c, "player_id"),
 			GameVersion:       queryPtr(c, "game_version"),
 			BuildChannel:      queryPtr(c, "build_channel"),
 			FieldKey:          queryPtr(c, "field_key"),
@@ -132,9 +132,9 @@ func makeAdminEvents(adminSvc services.Admin) app.HandlerFunc {
 	}
 }
 
-func makeAdminCommanderTrace(adminSvc services.Admin) app.HandlerFunc {
+func makeAdminPlayerTrace(adminSvc services.Admin) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
-		trace, err := adminSvc.CommanderTrace(ctx, query(c, "project_id"), c.Param("commander_id"), services.ParseLimit(query(c, "limit"), 500))
+		trace, err := adminSvc.PlayerTrace(ctx, query(c, "project_id"), c.Param("player_id"), services.ParseLimit(query(c, "limit"), 500))
 		if err != nil {
 			writeServiceError(c, err)
 			return

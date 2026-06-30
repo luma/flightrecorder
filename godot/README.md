@@ -118,7 +118,7 @@ The full-suite target writes Godot logs to `godot/.godot-test/`.
 4. Run the demo scene, paste the ingest token, and click `Emit Events` or
    `Submit Report`.
 
-5. Return to the admin UI and check Event Explorer, Commander Trace, heat-map
+5. Return to the admin UI and check Event Explorer, Player Trace, heat-map
    tables, funnels, and Bug Reports.
 
 ## Endpoint Settings
@@ -180,10 +180,10 @@ WAL is project-specific:
 user://flightrecorder/projects/<project_id>/wal.ndjson
 ```
 
-The stable anonymous commander ID helper is project-specific too:
+The stable anonymous player ID helper is project-specific too:
 
 ```text
-user://flightrecorder/projects/<project_id>/commander_id.txt
+user://flightrecorder/projects/<project_id>/player_id.txt
 ```
 
 The sender removes records only after the collector returns a 2xx response.

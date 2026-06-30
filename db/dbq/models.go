@@ -52,7 +52,7 @@ type Event struct {
 	ID               uuid.UUID       `json:"id"`
 	ProjectID        uuid.UUID       `json:"project_id"`
 	BatchDbID        pgtype.UUID     `json:"batch_db_id"`
-	CommanderID      uuid.UUID       `json:"commander_id"`
+	PlayerID         uuid.UUID       `json:"player_id"`
 	EventType        string          `json:"event_type"`
 	RealTs           time.Time       `json:"real_ts"`
 	GameTime         int64           `json:"game_time"`

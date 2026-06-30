@@ -1,7 +1,7 @@
 -- name: AdminSummary :one
 SELECT
     count(*)::bigint AS event_count,
-    count(DISTINCT commander_id)::bigint AS commander_count,
+    count(DISTINCT player_id)::bigint AS player_count,
     count(*) FILTER (WHERE event_type = 'game_continue')::bigint AS session_count,
     count(*) FILTER (WHERE event_type = 'player_death')::bigint AS death_count,
     (
@@ -19,7 +19,7 @@ WHERE events.project_id = $1
 -- name: AdminListEvents :many
 SELECT
     id,
-    commander_id,
+    player_id,
     event_type,
     real_ts,
     game_time,
@@ -58,7 +58,7 @@ WHERE events.project_id = $1
   AND (sqlc.narg('event_type')::text IS NULL OR event_type = sqlc.narg('event_type'))
   AND (sqlc.narg('system_id')::text IS NULL OR system_id = sqlc.narg('system_id'))
   AND (sqlc.narg('zone_id')::text IS NULL OR zone_id = sqlc.narg('zone_id'))
-  AND (sqlc.narg('commander_id')::uuid IS NULL OR commander_id = sqlc.narg('commander_id')::uuid)
+  AND (sqlc.narg('player_id')::uuid IS NULL OR player_id = sqlc.narg('player_id')::uuid)
   AND (sqlc.narg('game_version')::text IS NULL OR game_version = sqlc.narg('game_version'))
   AND (sqlc.narg('build_channel')::text IS NULL OR build_channel = sqlc.narg('build_channel'))
   AND real_ts >= $2
@@ -70,7 +70,7 @@ OFFSET $5;
 -- name: AdminListEventsByField :many
 SELECT
     events.id,
-    commander_id,
+    player_id,
     event_type,
     real_ts,
     game_time,
@@ -119,7 +119,7 @@ WHERE filter_field.project_id = $1
   AND (sqlc.narg('event_type')::text IS NULL OR event_type = sqlc.narg('event_type'))
   AND (sqlc.narg('system_id')::text IS NULL OR system_id = sqlc.narg('system_id'))
   AND (sqlc.narg('zone_id')::text IS NULL OR zone_id = sqlc.narg('zone_id'))
-  AND (sqlc.narg('commander_id')::uuid IS NULL OR commander_id = sqlc.narg('commander_id')::uuid)
+  AND (sqlc.narg('player_id')::uuid IS NULL OR player_id = sqlc.narg('player_id')::uuid)
   AND (sqlc.narg('game_version')::text IS NULL OR game_version = sqlc.narg('game_version'))
   AND (sqlc.narg('build_channel')::text IS NULL OR build_channel = sqlc.narg('build_channel'))
   AND real_ts >= $2
@@ -128,7 +128,7 @@ ORDER BY real_ts DESC
 LIMIT $4
 OFFSET $5;
 
--- name: AdminCommanderTrace :many
+-- name: AdminPlayerTrace :many
 SELECT
     id,
     event_type,
@@ -160,7 +160,7 @@ SELECT
     payload
 FROM events
 WHERE events.project_id = $1
-  AND commander_id = $2
+  AND player_id = $2
 ORDER BY game_time ASC
 LIMIT $3;
 
@@ -265,7 +265,7 @@ SELECT
     br.notes_preview,
     br.screenshot_object_key,
     br.created_at,
-    e.commander_id,
+    e.player_id,
     e.real_ts,
     e.game_time,
     e.system_id,
@@ -293,7 +293,7 @@ SELECT
     br.notes_preview,
     br.screenshot_object_key,
     br.created_at,
-    e.commander_id,
+    e.player_id,
     e.real_ts,
     e.game_time,
     e.system_id,
@@ -323,7 +323,7 @@ SELECT
     br.screenshot_object_key,
     br.screenshot_storage_error,
     br.created_at,
-    e.commander_id,
+    e.player_id,
     e.real_ts,
     e.game_time,
     e.system_id,
@@ -364,7 +364,7 @@ SELECT
 FROM bug_reports br
 JOIN events report_event ON report_event.id = br.event_id
 JOIN events e ON e.project_id = report_event.project_id
-             AND e.commander_id = report_event.commander_id
+             AND e.player_id = report_event.player_id
              AND e.game_time >= report_event.game_time - $3
              AND e.game_time <= report_event.game_time + $3
 WHERE br.project_id = $1
@@ -390,9 +390,9 @@ INSERT INTO report_notes (
 RETURNING id, note, created_at;
 
 -- name: AdminFunnelCounts :one
-WITH commander_flags AS (
+WITH player_flags AS (
     SELECT
-        commander_id,
+        player_id,
         bool_or(event_type = 'game_continue') AS continued,
         bool_or(event_type = 'undock') AS undocked,
         bool_or(event_type = 'dock') AS docked,
@@ -407,7 +407,7 @@ WITH commander_flags AS (
     WHERE project_id = $1
       AND real_ts >= $2
       AND real_ts <= $3
-    GROUP BY commander_id
+    GROUP BY player_id
 )
 SELECT
     count(*) FILTER (WHERE continued)::bigint AS onboarding_started,
@@ -422,7 +422,7 @@ SELECT
     count(*) FILTER (WHERE undocked AND docked)::bigint AS station_return_completed,
     count(*) FILTER (WHERE reported)::bigint AS report_started,
     count(*) FILTER (WHERE reported)::bigint AS report_completed
-FROM commander_flags;
+FROM player_flags;
 
 -- name: AdminEventTypes :many
 SELECT

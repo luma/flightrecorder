@@ -22,7 +22,7 @@ type clientInfo struct {
 
 type eventEnvelope struct {
 	SchemaVersion int             `json:"schema_version"`
-	CommanderID   string          `json:"commander_id"`
+	PlayerID      string          `json:"player_id"`
 	EventType     string          `json:"event_type"`
 	RealTS        string          `json:"real_ts"`
 	GameTime      int64           `json:"game_time"`
@@ -197,7 +197,7 @@ func readJSON(path string, out any) {
 
 func requireEnvelope(event eventEnvelope, wantType string) {
 	ExpectWithOffset(1, event.SchemaVersion).To(Equal(2))
-	requireNonEmpty("commander_id", event.CommanderID)
+	requireNonEmpty("player_id", event.PlayerID)
 	ExpectWithOffset(1, event.EventType).To(Equal(wantType))
 	requireISOTime("real_ts", event.RealTS)
 	requireNonEmpty("context.location.world_id", event.Context.Location.WorldID)

@@ -44,7 +44,7 @@ interface Filters {
   eventType: string;
   systemID: string;
   zoneID: string;
-  commanderID: string;
+  playerID: string;
   gameVersion: string;
   buildChannel: string;
   fieldKey: string;
@@ -70,7 +70,7 @@ export default function Dashboard() {
       eventType: "",
       systemID: "",
       zoneID: "",
-      commanderID: "",
+      playerID: "",
       fieldKey: "",
       fieldValue: "",
       reportStatus: "",
@@ -93,7 +93,7 @@ export default function Dashboard() {
     setParam(params, "event_type", filters.eventType);
     setParam(params, "system_id", filters.systemID);
     setParam(params, "zone_id", filters.zoneID);
-    setParam(params, "commander_id", filters.commanderID);
+    setParam(params, "player_id", filters.playerID);
     setParam(params, "game_version", filters.gameVersion);
     setParam(params, "build_channel", filters.buildChannel);
     setParam(params, "field_key", filters.fieldKey);
@@ -148,13 +148,13 @@ export default function Dashboard() {
     queryFn: () => api.funnels(adminFilters),
   });
 
-  const selectedCommander = filters.commanderID || events.data?.events[0]?.commander_id || "";
+  const selectedPlayer = filters.playerID || events.data?.events[0]?.player_id || "";
   const trace = useQuery({
-    enabled: hasProject && !!selectedCommander,
-    queryKey: ["trace", filters.projectID, selectedCommander],
+    enabled: hasProject && !!selectedPlayer,
+    queryKey: ["trace", filters.projectID, selectedPlayer],
     queryFn: () =>
-      selectedCommander
-        ? api.commanderTrace(filters.projectID, selectedCommander)
+      selectedPlayer
+        ? api.playerTrace(filters.projectID, selectedPlayer)
         : Promise.resolve({ events: [] }),
   });
 
@@ -224,15 +224,15 @@ export default function Dashboard() {
           events={events.data?.events ?? []}
           queryFields={settings.data?.project.query_fields ?? []}
           onOpen={setSelectedEvent}
-          onTrace={(commanderID) => {
-            setFilter("commanderID", commanderID);
+          onTrace={(playerID) => {
+            setFilter("playerID", playerID);
             setActiveTab("Trace");
           }}
         />
       ) : null}
       {activeTab === "Trace" ? (
         <TraceTable
-          commanderID={selectedCommander}
+          playerID={selectedPlayer}
           events={trace.data?.events ?? []}
           queryFields={settings.data?.project.query_fields ?? []}
         />
@@ -261,8 +261,8 @@ export default function Dashboard() {
         <ReportsTable
           reports={reports.data?.reports ?? []}
           onOpen={(report) => setSelectedReportID(report.report_id)}
-          onTrace={(commanderID) => {
-            setFilter("commanderID", commanderID);
+          onTrace={(playerID) => {
+            setFilter("playerID", playerID);
             setActiveTab("Trace");
           }}
         />
@@ -285,8 +285,8 @@ export default function Dashboard() {
         report={selectedReport.data}
         loading={selectedReport.isLoading}
         onClose={() => setSelectedReportID(null)}
-        onTrace={(commanderID) => {
-          setFilter("commanderID", commanderID);
+        onTrace={(playerID) => {
+          setFilter("playerID", playerID);
           setActiveTab("Trace");
           setSelectedReportID(null);
         }}
@@ -325,7 +325,7 @@ function FilterBar({
         />
         <Input label="System" value={filters.systemID} onChange={(value) => setFilter("systemID", value)} />
         <Input label="Zone" value={filters.zoneID} onChange={(value) => setFilter("zoneID", value)} />
-        <Input label="Commander" value={filters.commanderID} onChange={(value) => setFilter("commanderID", value)} />
+        <Input label="Player" value={filters.playerID} onChange={(value) => setFilter("playerID", value)} />
         <Select
           label="Field"
           value={filters.fieldKey}
@@ -357,7 +357,7 @@ function Overview({
   if (loading) return <Panel>Loading...</Panel>;
   const metrics = [
     ["Events", summary?.event_count ?? 0],
-    ["Commanders", summary?.commander_count ?? 0],
+    ["Players", summary?.player_count ?? 0],
     ["Sessions", summary?.session_count ?? 0],
     ["Deaths", summary?.death_count ?? 0],
     ["Reports", summary?.report_count ?? 0],
@@ -384,15 +384,15 @@ function EventsTable({
   events: EventSummary[];
   queryFields: QueryField[];
   onOpen: (event: EventSummary) => void;
-  onTrace: (commanderID: string) => void;
+  onTrace: (playerID: string) => void;
 }) {
   const visibleFields = queryFields.slice(0, 4);
   return (
     <Table
-      headers={["Type", "Commander", "System", "Zone", ...visibleFields.map((field) => field.label || field.key), "Version", "Time", "Actions"]}
+      headers={["Type", "Player", "System", "Zone", ...visibleFields.map((field) => field.label || field.key), "Version", "Time", "Actions"]}
       rows={events.map((event) => [
         event.event_type,
-        event.commander_id,
+        event.player_id,
         event.system_id,
         event.zone_id,
         ...visibleFields.map((field) => formatFieldValue(event.fields?.[field.key])),
@@ -400,7 +400,7 @@ function EventsTable({
         event.real_ts,
         <div className="flex gap-2">
           <button type="button" onClick={() => onOpen(event)} className="link-button">Open</button>
-          <button type="button" onClick={() => onTrace(event.commander_id)} className="link-button">Trace</button>
+          <button type="button" onClick={() => onTrace(event.player_id)} className="link-button">Trace</button>
           <button type="button" onClick={() => copyText(event.id)} className="link-button">Copy ID</button>
         </div>,
       ])}
@@ -408,13 +408,13 @@ function EventsTable({
   );
 }
 
-function TraceTable({ commanderID, events, queryFields }: { commanderID?: string; events: TraceEvent[]; queryFields?: QueryField[] }) {
+function TraceTable({ playerID, events, queryFields }: { playerID?: string; events: TraceEvent[]; queryFields?: QueryField[] }) {
   const visibleFields = (queryFields ?? []).slice(0, 3);
   return (
     <section className="space-y-3">
       <div className="flex items-center gap-2 text-sm text-on-surface-variant">
-        <span>{commanderID || "No commander selected"}</span>
-        {commanderID ? <button type="button" onClick={() => copyText(commanderID)} className="link-button">Copy Commander</button> : null}
+        <span>{playerID || "No player selected"}</span>
+        {playerID ? <button type="button" onClick={() => copyText(playerID)} className="link-button">Copy Player</button> : null}
       </div>
       <Table
         headers={["Type", "System", "Zone", ...visibleFields.map((field) => field.label || field.key), "Game time", "Time", "Payload"]}
@@ -471,11 +471,11 @@ function ReportsTable({
 }: {
   reports: ReportSummary[];
   onOpen: (report: ReportSummary) => void;
-  onTrace: (commanderID: string) => void;
+  onTrace: (playerID: string) => void;
 }) {
   return (
     <Table
-      headers={["Details", "Report", "Status", "Labels", "Mood", "Notes", "Commander", "System", "Created", "Trace"]}
+      headers={["Details", "Report", "Status", "Labels", "Mood", "Notes", "Player", "System", "Created", "Trace"]}
       rows={reports.map((report) => [
         <button type="button" onClick={() => onOpen(report)} className="btn-secondary">Open</button>,
         <button type="button" onClick={() => onOpen(report)} className="link-button">{report.report_id}</button>,
@@ -483,10 +483,10 @@ function ReportsTable({
         report.labels.join(", "),
         report.mood_label,
         report.notes_preview,
-        report.commander_id,
+        report.player_id,
         report.system_id,
         report.created_at,
-        <button type="button" onClick={() => onTrace(report.commander_id)} className="link-button">Trace</button>,
+        <button type="button" onClick={() => onTrace(report.player_id)} className="link-button">Trace</button>,
       ])}
     />
   );
@@ -645,7 +645,7 @@ function EventDrawer({
         <InfoGrid
           rows={[
             ["Event ID", event.id],
-            ["Commander", event.commander_id],
+            ["Player", event.player_id],
             ["System", event.system_id],
             ["Zone", event.zone_id],
             ["Version", event.game_version],
@@ -656,7 +656,7 @@ function EventDrawer({
         {fieldRows.length > 0 ? <InfoGrid rows={fieldRows} /> : null}
         <div className="flex flex-wrap gap-2">
           <button type="button" onClick={() => copyText(event.id)} className="btn-secondary">Copy Event ID</button>
-          <button type="button" onClick={() => copyText(event.commander_id)} className="btn-secondary">Copy Commander</button>
+          <button type="button" onClick={() => copyText(event.player_id)} className="btn-secondary">Copy Player</button>
           <button type="button" onClick={() => copyText(JSON.stringify(event, null, 2))} className="btn-secondary">Copy JSON</button>
         </div>
         <JSONBlock label="Context" value={event.context} />
@@ -682,7 +682,7 @@ function ReportDrawer({
   report?: ReportDetail;
   loading: boolean;
   onClose: () => void;
-  onTrace: (commanderID: string) => void;
+  onTrace: (playerID: string) => void;
 }) {
   const queryClient = useQueryClient();
   const [status, setStatus] = useState("");
@@ -722,7 +722,7 @@ function ReportDrawer({
             rows={[
               ["Status", report.status],
               ["Mood", `${report.mood} ${report.mood_label}`],
-              ["Commander", report.commander_id],
+              ["Player", report.player_id],
               ["System", report.system_id],
               ["Zone", report.zone_id],
               ["Created", report.created_at],
@@ -748,8 +748,8 @@ function ReportDrawer({
           </label>
           <div className="flex flex-wrap gap-2">
             <button type="button" onClick={() => mutation.mutate()} className="btn-primary">Save</button>
-            <button type="button" onClick={() => onTrace(report.commander_id)} className="btn-secondary">Trace Commander</button>
-            <button type="button" onClick={() => copyText(report.commander_id)} className="btn-secondary">Copy Commander</button>
+            <button type="button" onClick={() => onTrace(report.player_id)} className="btn-secondary">Trace Player</button>
+            <button type="button" onClick={() => copyText(report.player_id)} className="btn-secondary">Copy Player</button>
           </div>
           <JSONBlock label="Context" value={report.context} />
           <JSONBlock label="Metrics" value={report.metrics} />
@@ -765,7 +765,7 @@ function ReportDrawer({
               </div>
             ))}
           </section>
-          <TraceTable commanderID={report.commander_id} events={report.trace} />
+          <TraceTable playerID={report.player_id} events={report.trace} />
         </div>
       )}
     </Drawer>
@@ -889,7 +889,7 @@ function toAdminFilters(filters: Filters): AdminFilters {
     event_type: filters.eventType,
     system_id: filters.systemID,
     zone_id: filters.zoneID,
-    commander_id: filters.commanderID,
+    player_id: filters.playerID,
     game_version: filters.gameVersion,
     build_channel: filters.buildChannel,
     field_key: filters.fieldKey,
@@ -914,7 +914,7 @@ function filtersFromURL(projectFallback: string): Filters {
     eventType: params.get("event_type") || "",
     systemID: params.get("system_id") || "",
     zoneID: params.get("zone_id") || "",
-    commanderID: params.get("commander_id") || "",
+    playerID: params.get("player_id") || "",
     gameVersion: params.get("game_version") || "",
     buildChannel: params.get("build_channel") || "",
     fieldKey: params.get("field_key") || "",

@@ -7,7 +7,7 @@ var _client
 
 func before_each() -> void:
 	_client = autofree(TELEMETRY_SCRIPT.new())
-	_client.commander_id = "550e8400-e29b-41d4-a716-446655440000"
+	_client.player_id = "550e8400-e29b-41d4-a716-446655440000"
 	_client.project_id = "gut_test_%s" % Time.get_ticks_usec()
 
 
@@ -34,7 +34,7 @@ func test_build_event_emits_schema_v2_layers_from_compat_context() -> void:
 	)
 
 	assert_eq(event["schema_version"], 2)
-	assert_eq(event["commander_id"], "550e8400-e29b-41d4-a716-446655440000")
+	assert_eq(event["player_id"], "550e8400-e29b-41d4-a716-446655440000")
 	assert_eq(event["event_type"], "dock")
 	assert_eq(event["game_time"], 1843200)
 	assert_eq(event["context"]["location"]["world_id"], "lave")
@@ -57,7 +57,7 @@ func test_build_event_preserves_explicit_generic_context_metrics_and_dimensions(
 			"wave_result": "clean",
 		},
 		{
-			"commander_id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+			"player_id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
 			"game_time": 99,
 			"context": {
 				"location": {
@@ -77,7 +77,7 @@ func test_build_event_preserves_explicit_generic_context_metrics_and_dimensions(
 		},
 	)
 
-	assert_eq(event["commander_id"], "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+	assert_eq(event["player_id"], "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
 	assert_eq(event["context"]["location"]["world_id"], "arena_1")
 	assert_eq(event["context"]["difficulty"], "hard")
 	assert_eq(event["metrics"]["character.level"], 12)
@@ -153,8 +153,8 @@ func test_configure_sanitizes_project_specific_paths() -> void:
 		"user://flightrecorder/projects/sursidus_demo___qa/wal.ndjson",
 	)
 	assert_eq(
-		_client._commander_id_path(),
-		"user://flightrecorder/projects/sursidus_demo___qa/commander_id.txt",
+		_client._player_id_path(),
+		"user://flightrecorder/projects/sursidus_demo___qa/player_id.txt",
 	)
 
 

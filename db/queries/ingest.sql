@@ -25,7 +25,7 @@ RETURNING id, accepted_count, rejected_count;
 INSERT INTO events (
     project_id,
     batch_db_id,
-    commander_id,
+    player_id,
     event_type,
     real_ts,
     game_time,
@@ -68,12 +68,12 @@ SET value_type = EXCLUDED.value_type,
     number_value = EXCLUDED.number_value,
     bool_value = EXCLUDED.bool_value;
 
--- name: CountRecentBugReportsByCommander :one
+-- name: CountRecentBugReportsByPlayer :one
 SELECT count(*)::bigint
 FROM bug_reports br
 JOIN events e ON e.id = br.event_id
 WHERE br.project_id = $1
-  AND e.commander_id = $2
+  AND e.player_id = $2
   AND br.created_at > now() - make_interval(secs => $3);
 
 -- name: CreateBugReport :one

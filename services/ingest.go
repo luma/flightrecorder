@@ -46,7 +46,7 @@ type ClientInfo struct {
 type EventEnvelope struct {
 	Raw           json.RawMessage `json:"-"`
 	SchemaVersion int             `json:"schema_version"`
-	CommanderID   string          `json:"commander_id"`
+	PlayerID      string          `json:"player_id"`
 	EventType     string          `json:"event_type"`
 	RealTS        string          `json:"real_ts"`
 	GameTime      int64           `json:"game_time"`
@@ -279,15 +279,15 @@ func (s *ingestService) SubmitBugReport(ctx context.Context, authProjectID uuid.
 		return BugReportResponse{}, err
 	}
 
-	commanderID, err := uuid.Parse(req.Event.CommanderID)
+	playerID, err := uuid.Parse(req.Event.PlayerID)
 	if err != nil {
-		return BugReportResponse{}, fmt.Errorf("%w: commander_id must be a UUID", ErrBadRequest)
+		return BugReportResponse{}, fmt.Errorf("%w: player_id must be a UUID", ErrBadRequest)
 	}
 
-	recent, err := s.queries.CountRecentBugReportsByCommander(ctx, dbq.CountRecentBugReportsByCommanderParams{
-		ProjectID:   project.ID,
-		CommanderID: commanderID,
-		Secs:        float64(s.reportRateLimitSeconds),
+	recent, err := s.queries.CountRecentBugReportsByPlayer(ctx, dbq.CountRecentBugReportsByPlayerParams{
+		ProjectID: project.ID,
+		PlayerID:  playerID,
+		Secs:      float64(s.reportRateLimitSeconds),
 	})
 	if err != nil {
 		return BugReportResponse{}, err
@@ -449,8 +449,8 @@ func validateEvent(event EventEnvelope) error {
 	if event.SchemaVersion != 2 {
 		return fmt.Errorf("%w: schema_version must be 2", ErrBadRequest)
 	}
-	if _, err := uuid.Parse(event.CommanderID); err != nil {
-		return fmt.Errorf("%w: commander_id must be a UUID", ErrBadRequest)
+	if _, err := uuid.Parse(event.PlayerID); err != nil {
+		return fmt.Errorf("%w: player_id must be a UUID", ErrBadRequest)
 	}
 	if strings.TrimSpace(event.EventType) == "" {
 		return fmt.Errorf("%w: event_type is required", ErrBadRequest)
@@ -494,7 +494,7 @@ func validateClient(client ClientInfo) error {
 // and validateClient before reaching this function, so uuid.Parse, parseTime,
 // and eventLocation cannot fail on pre-validated data.
 func createEventParams(projectID uuid.UUID, batchID pgtype.UUID, client ClientInfo, event EventEnvelope, validationErrors []string) dbq.CreateEventParams {
-	commanderID, _ := uuid.Parse(event.CommanderID)
+	playerID, _ := uuid.Parse(event.PlayerID)
 	realTS, _ := parseTime(event.RealTS)
 	location, _ := eventLocation(event.Context)
 	contextJSON := normalizedJSONObject(event.Context)
@@ -507,7 +507,7 @@ func createEventParams(projectID uuid.UUID, batchID pgtype.UUID, client ClientIn
 	return dbq.CreateEventParams{
 		ProjectID:        projectID,
 		BatchDbID:        batchID,
-		CommanderID:      commanderID,
+		PlayerID:         playerID,
 		EventType:        event.EventType,
 		RealTs:           realTS,
 		GameTime:         event.GameTime,
@@ -704,7 +704,7 @@ func normalizedEventJSON(event EventEnvelope, contextJSON json.RawMessage, metri
 	}
 	eventJSON, err := json.Marshal(map[string]any{
 		"schema_version": event.SchemaVersion,
-		"commander_id":   event.CommanderID,
+		"player_id":      event.PlayerID,
 		"event_type":     event.EventType,
 		"real_ts":        event.RealTS,
 		"game_time":      event.GameTime,

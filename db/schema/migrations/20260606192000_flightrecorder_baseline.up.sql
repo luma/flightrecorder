@@ -80,7 +80,7 @@ CREATE TABLE events (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     project_id uuid NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
     batch_db_id uuid REFERENCES batches(id) ON DELETE SET NULL,
-    commander_id uuid NOT NULL,
+    player_id uuid NOT NULL,
     event_type text NOT NULL,
     real_ts timestamptz NOT NULL,
     game_time bigint NOT NULL,
@@ -102,7 +102,7 @@ CREATE TABLE events (
 );
 
 -- Dashboard and list views mostly filter by project and time, sometimes with
--- event type, commander, or system constraints. These indexes avoid full project
+-- event type, player, or system constraints. These indexes avoid full project
 -- scans once event volume reaches millions of rows.
 CREATE INDEX events_project_real_ts_idx
 ON events(project_id, real_ts DESC);
@@ -110,11 +110,11 @@ ON events(project_id, real_ts DESC);
 CREATE INDEX events_project_type_time_idx
 ON events(project_id, event_type, real_ts DESC);
 
-CREATE INDEX events_project_commander_game_time_idx
-ON events(project_id, commander_id, game_time ASC);
+CREATE INDEX events_project_player_game_time_idx
+ON events(project_id, player_id, game_time ASC);
 
-CREATE INDEX events_project_commander_real_ts_idx
-ON events(project_id, commander_id, real_ts DESC);
+CREATE INDEX events_project_player_real_ts_idx
+ON events(project_id, player_id, real_ts DESC);
 
 CREATE INDEX events_project_system_zone_idx
 ON events(project_id, system_id, zone_id);

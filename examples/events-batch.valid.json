@@ -11,7 +11,7 @@
   "events": [
     {
       "schema_version": 2,
-      "commander_id": "550e8400-e29b-41d4-a716-446655440000",
+      "player_id": "550e8400-e29b-41d4-a716-446655440000",
       "event_type": "dock",
       "real_ts": "2026-06-06T11:42:00Z",
       "game_time": 1843200,
