@@ -1,17 +1,32 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useIsMutating, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   api,
   type AdminFilters,
+  type CreateProjectRequest,
   type EventSummary,
   type EventTypeSummary,
+  type FunnelDefinition,
   type FunnelSummary,
   type HeatmapCell,
   type QueryField,
   type ReportDetail,
   type ReportSummary,
+  type SettingsResponse,
   type TraceEvent,
 } from "../api";
+import {
+  EventGroupsBuilder,
+  FunnelsBuilder,
+  QueryFieldsBuilder,
+  eventGroupsFromDrafts,
+  eventGroupsToDrafts,
+  normalizeFunnel,
+  normalizeQueryField,
+  validateEventGroupDrafts,
+  validateSchemaDrafts,
+  type EventGroupDraft,
+} from "../components/ProjectSchemaBuilders";
 import { useProjectScope } from "../hooks/useProjectScope";
 
 const tabs = [
@@ -273,7 +288,7 @@ export default function Dashboard() {
       {activeTab === "Schema" ? (
         <SchemaTable
           eventTypes={eventTypes.data?.event_types ?? []}
-          queryFields={settings.data?.project.query_fields ?? []}
+          settings={settings.data}
         />
       ) : null}
       {activeTab === "Settings" ? <Settings projectID={filters.projectID} settings={settings.data} /> : null}
@@ -496,7 +511,72 @@ function ReportsTable({
   );
 }
 
-function SchemaTable({ eventTypes, queryFields }: { eventTypes: EventTypeSummary[]; queryFields: QueryField[] }) {
+function SchemaTable({
+  eventTypes,
+  settings,
+}: {
+  eventTypes: EventTypeSummary[];
+  settings?: SettingsResponse;
+}) {
+  const queryClient = useQueryClient();
+  const project = settings?.project;
+  const [eventGroups, setEventGroups] = useState<EventGroupDraft[]>([]);
+  const [queryFields, setQueryFields] = useState<QueryField[]>([]);
+  const [funnels, setFunnels] = useState<FunnelDefinition[]>([]);
+  const [validationError, setValidationError] = useState("");
+  const [saveStatus, setSaveStatus] = useState("");
+  const updateProjectMutationKey = ["update-project", project?.project_id ?? ""] as const;
+  const projectUpdatePending = useIsMutating({ mutationKey: updateProjectMutationKey }) > 0;
+
+  useEffect(() => {
+    if (!project) return;
+    setEventGroups(eventGroupsToDrafts(project.event_groups ?? {}));
+    setQueryFields(project.query_fields ?? []);
+    setFunnels(project.funnels ?? []);
+    setValidationError("");
+    setSaveStatus("");
+  }, [project?.project_id]);
+
+  const updateProject = useMutation({
+    mutationKey: updateProjectMutationKey,
+    mutationFn: (body: CreateProjectRequest) => api.updateProject(body),
+    onSuccess: (updatedProject) => {
+      setSaveStatus("Saved");
+      queryClient.setQueryData<SettingsResponse>(["settings", updatedProject.project_id], (current) =>
+        current ? { ...current, project: updatedProject } : current,
+      );
+      queryClient.invalidateQueries({ queryKey: ["settings", updatedProject.project_id] });
+      queryClient.invalidateQueries({ queryKey: ["projects"] });
+      queryClient.invalidateQueries({ queryKey: ["funnels"] });
+      queryClient.invalidateQueries({ queryKey: ["event-types", updatedProject.project_id] });
+    },
+  });
+
+  const submit = () => {
+    if (!project || projectUpdatePending) return;
+    setValidationError("");
+    setSaveStatus("");
+    const eventGroupError = validateEventGroupDrafts(eventGroups);
+    if (eventGroupError) {
+      setValidationError(eventGroupError);
+      return;
+    }
+    const preparedEventGroups = eventGroupsFromDrafts(eventGroups);
+    const preparedQueryFields = queryFields.map(normalizeQueryField).filter((field) => field.key || field.source || field.label);
+    const preparedFunnels = funnels.map(normalizeFunnel).filter((funnel) => funnel.id || funnel.name || funnel.steps.length > 0);
+    const schemaError = validateSchemaDrafts(preparedQueryFields, preparedFunnels);
+    if (schemaError) {
+      setValidationError(schemaError);
+      return;
+    }
+    const latestProject = queryClient.getQueryData<SettingsResponse>(["settings", project.project_id])?.project ?? project;
+    updateProject.mutate(projectUpdateRequest(latestProject, {
+      event_groups: preparedEventGroups,
+      query_fields: preparedQueryFields,
+      funnels: preparedFunnels,
+    }));
+  };
+
   return (
     <div className="space-y-4">
       <Table
@@ -519,6 +599,30 @@ function SchemaTable({ eventTypes, queryFields }: { eventTypes: EventTypeSummary
           field.aggregations.join(", "),
         ])}
       />
+      {project ? (
+        <div className="space-y-4">
+          <div className="grid gap-4 xl:grid-cols-3">
+            <EventGroupsBuilder groups={eventGroups} onChange={setEventGroups} />
+            <QueryFieldsBuilder fields={queryFields} onChange={setQueryFields} />
+            <FunnelsBuilder funnels={funnels} queryFields={queryFields} onChange={setFunnels} />
+          </div>
+          {validationError || updateProject.error ? (
+            <p className="text-sm text-status-error">
+              {validationError || (updateProject.error instanceof Error ? updateProject.error.message : "Failed to save schema")}
+            </p>
+          ) : null}
+          {saveStatus ? <p className="text-sm text-on-surface-variant">{saveStatus}</p> : null}
+          <div className="flex justify-end">
+            <button type="button" onClick={submit} disabled={projectUpdatePending} className="btn-primary disabled:opacity-50">
+              {projectUpdatePending ? "Saving..." : "Save Schema"}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <Panel>
+          <p className="text-sm text-on-surface-variant">Loading schema settings...</p>
+        </Panel>
+      )}
     </div>
   );
 }
@@ -558,14 +662,13 @@ function Settings({
       <Panel>
         <dl className="grid gap-3 text-sm md:grid-cols-2">
           <Info label="Project" value={settings?.project.project_id ?? projectID} />
-          <Info label="Display name" value={settings?.project.display_name ?? ""} />
-          <Info label="Validation" value={settings?.project.validation_mode ?? ""} />
           <Info label="Session" value="Signed admin cookie" />
           <Info label="Admin allowlist" value="ADMIN_ALLOWED_EMAILS" />
           <Info label="Local screenshots" value="REPORT_STORAGE_BACKEND=local, REPORT_STORAGE_DIR=var/reports" />
           <Info label="R2 screenshots" value="REPORT_STORAGE_BACKEND=r2 with R2_ENDPOINT, R2_BUCKET, R2_ACCESS_KEY_ID" />
         </dl>
       </Panel>
+      <ProjectSettingsEditor settings={settings} />
       <Panel>
         <form
           className="mb-3 flex flex-wrap items-end gap-2"
@@ -621,12 +724,154 @@ function Settings({
           ])}
         />
       </Panel>
-      <Panel>
-        <pre className="max-h-80 overflow-auto text-xs text-on-surface">
-          {JSON.stringify(settings?.project ?? {}, null, 2)}
-        </pre>
-      </Panel>
     </div>
+  );
+}
+
+function ProjectSettingsEditor({ settings }: { settings?: SettingsResponse }) {
+  const queryClient = useQueryClient();
+  const project = settings?.project;
+  const [displayName, setDisplayName] = useState("");
+  const [validationMode, setValidationMode] = useState<"warn" | "strict">("warn");
+  const [maxEvents, setMaxEvents] = useState("");
+  const [allowUnknownEvents, setAllowUnknownEvents] = useState(true);
+  const [allowScreenshotFailures, setAllowScreenshotFailures] = useState(true);
+  const [eventDays, setEventDays] = useState("");
+  const [reportDays, setReportDays] = useState("");
+  const [accessLogDays, setAccessLogDays] = useState("");
+  const [spatialEnabled, setSpatialEnabled] = useState(true);
+  const [zoneExtentM, setZoneExtentM] = useState("");
+  const [zoneCellM, setZoneCellM] = useState("");
+  const [reportStatusesValue, setReportStatusesValue] = useState("");
+  const [reportLabelsValue, setReportLabelsValue] = useState("");
+  const [rateLimitSeconds, setRateLimitSeconds] = useState("");
+  const [validationError, setValidationError] = useState("");
+  const [saveStatus, setSaveStatus] = useState("");
+  const updateProjectMutationKey = ["update-project", project?.project_id ?? ""] as const;
+  const projectUpdatePending = useIsMutating({ mutationKey: updateProjectMutationKey }) > 0;
+
+  useEffect(() => {
+    if (!project) return;
+    setDisplayName(project.display_name ?? "");
+    setValidationMode(project.validation_mode === "strict" ? "strict" : "warn");
+    setMaxEvents(configNumber(project.ingest_config, "max_events_per_batch"));
+    setAllowUnknownEvents(configBool(project.ingest_config, "allow_unknown_event_types", true));
+    setAllowScreenshotFailures(configBool(project.ingest_config, "allow_screenshot_failures", true));
+    setEventDays(configNumber(project.retention_config, "event_days"));
+    setReportDays(configNumber(project.retention_config, "report_days"));
+    setAccessLogDays(configNumber(project.retention_config, "access_log_days"));
+    setSpatialEnabled(configBool(project.map_config, "spatial_enabled", true));
+    setZoneExtentM(configNumber(project.map_config, "zone_extent_m"));
+    setZoneCellM(configNumber(project.map_config, "zone_heatmap_cell_m"));
+    setReportStatusesValue(configStringList(project.report_config, "statuses"));
+    setReportLabelsValue(configStringList(project.report_config, "labels"));
+    setRateLimitSeconds(configNumber(project.report_config, "rate_limit_seconds"));
+    setValidationError("");
+    setSaveStatus("");
+  }, [project?.project_id]);
+
+  const updateProject = useMutation({
+    mutationKey: updateProjectMutationKey,
+    mutationFn: (body: CreateProjectRequest) => api.updateProject(body),
+    onSuccess: (updatedProject) => {
+      setSaveStatus("Saved");
+      queryClient.setQueryData<SettingsResponse>(["settings", updatedProject.project_id], (current) =>
+        current ? { ...current, project: updatedProject } : current,
+      );
+      queryClient.invalidateQueries({ queryKey: ["settings", updatedProject.project_id] });
+      queryClient.invalidateQueries({ queryKey: ["projects"] });
+    },
+  });
+
+  const submit = () => {
+    if (!project || projectUpdatePending) return;
+    setValidationError("");
+    setSaveStatus("");
+    const trimmedDisplayName = displayName.trim();
+    if (!trimmedDisplayName) {
+      setValidationError("Display name is required.");
+      return;
+    }
+    const latestProject = queryClient.getQueryData<SettingsResponse>(["settings", project.project_id])?.project ?? project;
+    updateProject.mutate(projectUpdateRequest(latestProject, {
+      display_name: trimmedDisplayName,
+      validation_mode: validationMode,
+      ingest_config: {
+        ...latestProject.ingest_config,
+        max_events_per_batch: parsePositiveInt(maxEvents, 50),
+        accept_gzip: configBool(latestProject.ingest_config, "accept_gzip", true),
+        allow_unknown_event_types: allowUnknownEvents,
+        allow_screenshot_failures: allowScreenshotFailures,
+      },
+      retention_config: {
+        ...latestProject.retention_config,
+        event_days: parsePositiveInt(eventDays, 730),
+        report_days: parsePositiveInt(reportDays, 1095),
+        access_log_days: parsePositiveInt(accessLogDays, 14),
+      },
+      map_config: {
+        ...latestProject.map_config,
+        spatial_enabled: spatialEnabled,
+        zone_extent_m: parsePositiveInt(zoneExtentM, 30000),
+        zone_heatmap_cell_m: parsePositiveInt(zoneCellM, 300),
+      },
+      report_config: {
+        ...latestProject.report_config,
+        statuses: splitLabels(reportStatusesValue),
+        labels: splitLabels(reportLabelsValue),
+        rate_limit_seconds: parsePositiveInt(rateLimitSeconds, 60),
+      },
+    }));
+  };
+
+  if (!project) {
+    return (
+      <Panel>
+        <p className="text-sm text-on-surface-variant">Loading project settings...</p>
+      </Panel>
+    );
+  }
+
+  return (
+    <Panel>
+      <div className="space-y-4">
+        <div className="grid gap-3 md:grid-cols-2">
+          <Input label="Display name" value={displayName} onChange={setDisplayName} />
+          <Select label="Validation" value={validationMode} options={["warn", "strict"]} onChange={(value) => setValidationMode(value as "warn" | "strict")} />
+        </div>
+        <div className="grid gap-4 lg:grid-cols-2">
+          <section className="grid gap-3 md:grid-cols-2">
+            <Input label="Max events per batch" value={maxEvents} onChange={setMaxEvents} />
+            <Input label="Bug report rate limit" value={rateLimitSeconds} onChange={setRateLimitSeconds} />
+            <Checkbox label="Allow unknown event types" checked={allowUnknownEvents} onChange={setAllowUnknownEvents} />
+            <Checkbox label="Allow screenshot failures" checked={allowScreenshotFailures} onChange={setAllowScreenshotFailures} />
+            <Input label="Event retention days" value={eventDays} onChange={setEventDays} />
+            <Input label="Report retention days" value={reportDays} onChange={setReportDays} />
+            <Input label="Access log retention days" value={accessLogDays} onChange={setAccessLogDays} />
+          </section>
+          <section className="grid gap-3">
+            <Checkbox label="Spatial maps enabled" checked={spatialEnabled} onChange={setSpatialEnabled} />
+            <div className="grid gap-3 md:grid-cols-2">
+              <Input label="Zone extent m" value={zoneExtentM} onChange={setZoneExtentM} />
+              <Input label="Heatmap cell m" value={zoneCellM} onChange={setZoneCellM} />
+            </div>
+            <Input label="Report statuses" value={reportStatusesValue} onChange={setReportStatusesValue} />
+            <Input label="Report labels" value={reportLabelsValue} onChange={setReportLabelsValue} />
+          </section>
+        </div>
+        {validationError || updateProject.error ? (
+          <p className="text-sm text-status-error">
+            {validationError || (updateProject.error instanceof Error ? updateProject.error.message : "Failed to save settings")}
+          </p>
+        ) : null}
+        {saveStatus ? <p className="text-sm text-on-surface-variant">{saveStatus}</p> : null}
+        <div className="flex justify-end">
+          <button type="button" onClick={submit} disabled={projectUpdatePending} className="btn-primary disabled:opacity-50">
+            {projectUpdatePending ? "Saving..." : "Save Settings"}
+          </button>
+        </div>
+      </div>
+    </Panel>
   );
 }
 
@@ -834,6 +1079,20 @@ function Input({ label, value, onChange, placeholder }: { label: string; value: 
   );
 }
 
+function Checkbox({ label, checked, onChange }: { label: string; checked: boolean; onChange: (checked: boolean) => void }) {
+  return (
+    <label className="flex items-center gap-2 text-sm text-on-surface-variant">
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(event) => onChange(event.target.checked)}
+        className="h-4 w-4 rounded border-outline-ghost bg-surface-container accent-primary"
+      />
+      <span>{label}</span>
+    </label>
+  );
+}
+
 function Select({ label, value, options, onChange }: { label: string; value: string; options: readonly string[]; onChange: (value: string) => void }) {
   return (
     <label className="block text-sm text-on-surface-variant">
@@ -957,6 +1216,46 @@ function applyPreset(value: string, setFilter: <K extends keyof Filters>(key: K,
 
 function isoDaysAgo(days: number) {
   return new Date(Date.now() - days * 86_400_000).toISOString();
+}
+
+function projectUpdateRequest(
+  project: SettingsResponse["project"],
+  patch: Partial<CreateProjectRequest>,
+): CreateProjectRequest {
+  return {
+    project_id: project.project_id,
+    display_name: project.display_name,
+    validation_mode: project.validation_mode === "strict" ? "strict" : "warn",
+    ingest_config: project.ingest_config,
+    retention_config: project.retention_config,
+    map_config: project.map_config,
+    report_config: project.report_config,
+    event_groups: project.event_groups ?? {},
+    query_fields: project.query_fields ?? [],
+    funnels: project.funnels ?? [],
+    ...patch,
+  };
+}
+
+function configNumber(config: Record<string, unknown>, key: string): string {
+  const value = config[key];
+  return typeof value === "number" ? String(value) : "";
+}
+
+function configBool(config: Record<string, unknown>, key: string, fallback: boolean): boolean {
+  const value = config[key];
+  return typeof value === "boolean" ? value : fallback;
+}
+
+function configStringList(config: Record<string, unknown>, key: string): string {
+  const value = config[key];
+  if (!Array.isArray(value)) return "";
+  return value.filter((item): item is string => typeof item === "string").join(", ");
+}
+
+function parsePositiveInt(value: string, fallback: number) {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
 function splitLabels(value: string) {

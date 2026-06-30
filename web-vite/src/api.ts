@@ -226,7 +226,7 @@ export interface SettingsResponse {
     retention_config: Record<string, unknown>;
     map_config: Record<string, unknown>;
     report_config: Record<string, unknown>;
-    event_groups: Record<string, unknown>;
+    event_groups: Record<string, string[]>;
     query_fields: QueryField[];
     funnels: FunnelDefinition[];
   };
@@ -297,6 +297,11 @@ export const api = {
     apiFetch<{ event_types: EventTypeSummary[] }>(`/event-types?project_id=${encodeURIComponent(projectID)}`),
   projects: () => apiFetch<{ projects: ProjectSummary[] }>("/projects"),
   createProject: (body: CreateProjectRequest) =>
+    apiFetch<SettingsResponse["project"]>("/projects", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  updateProject: (body: CreateProjectRequest) =>
     apiFetch<SettingsResponse["project"]>("/projects", {
       method: "POST",
       body: JSON.stringify(body),
