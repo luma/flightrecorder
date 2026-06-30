@@ -27,6 +27,7 @@ import {
   validateSchemaDrafts,
   type EventGroupDraft,
 } from "../components/ProjectSchemaBuilders";
+import { AddProjectWizard } from "../components/ProjectControls";
 import { useProjectScope } from "../hooks/useProjectScope";
 
 const tabs = [
@@ -69,12 +70,15 @@ interface Filters {
 }
 
 export default function Dashboard() {
-  const { projectScope } = useProjectScope();
+  const queryClient = useQueryClient();
+  const { projectScope, setProjectScope } = useProjectScope();
   const initial = useMemo(() => filtersFromURL(projectScope || ""), []);
   const [activeTab, setActiveTab] = useState<Tab>(tabFromURL());
   const [filters, setFilters] = useState<Filters>(initial);
   const [selectedEvent, setSelectedEvent] = useState<EventSummary | null>(null);
   const [selectedReportID, setSelectedReportID] = useState<string | null>(null);
+  const [addProjectOpen, setAddProjectOpen] = useState(false);
+  const [emptyWizardDismissed, setEmptyWizardDismissed] = useState(false);
 
   const switchProject = (projectID: string) => {
     setSelectedEvent(null);
@@ -99,6 +103,36 @@ export default function Dashboard() {
     }
   }, [filters.projectID, projectScope]);
 
+  const projects = useQuery({
+    queryKey: ["projects"],
+    queryFn: () => api.projects(),
+  });
+  const projectList = projects.data?.projects ?? [];
+  const projectsLoaded = !!projects.data;
+  const noProjects = projectsLoaded && projectList.length === 0;
+
+  useEffect(() => {
+    if (!projectsLoaded) return;
+    if (noProjects) {
+      if (projectScope) {
+        setProjectScope(null);
+      }
+      if (filters.projectID) {
+        switchProject("");
+      }
+      return;
+    }
+    if (filters.projectID && !projectList.some((project) => project.project_id === filters.projectID)) {
+      switchProject(projectList[0]?.project_id ?? "");
+    }
+  }, [filters.projectID, noProjects, projectList, projectScope, projectsLoaded, setProjectScope]);
+
+  useEffect(() => {
+    if (noProjects && !emptyWizardDismissed) {
+      setAddProjectOpen(true);
+    }
+  }, [emptyWizardDismissed, noProjects]);
+
   useEffect(() => {
     const params = new URLSearchParams();
     params.set("tab", activeTab);
@@ -119,7 +153,8 @@ export default function Dashboard() {
   }, [activeTab, filters]);
 
   const adminFilters = useMemo(() => toAdminFilters(filters), [filters]);
-  const hasProject = !!filters.projectID;
+  const selectedProjectExists = projectsLoaded && projectList.some((project) => project.project_id === filters.projectID);
+  const hasProject = !!filters.projectID && selectedProjectExists;
 
   const summary = useQuery({
     enabled: hasProject,
@@ -200,6 +235,30 @@ export default function Dashboard() {
   const projectName = settings.data?.project.display_name || filters.projectID;
   const spatialTabs: Tab[] = ["Regions", "Zone"];
   const visibleTabs = tabs.filter((tab) => spatialEnabled || !spatialTabs.includes(tab));
+
+  if (noProjects) {
+    return (
+      <div className="space-y-5">
+        <ProjectEmptyState onAddProject={() => setAddProjectOpen(true)} />
+        {addProjectOpen ? (
+          <AddProjectWizard
+            onClose={() => {
+              setAddProjectOpen(false);
+              setEmptyWizardDismissed(true);
+            }}
+            onCreated={(project) => {
+              queryClient.invalidateQueries({ queryKey: ["projects"] });
+              queryClient.invalidateQueries({ queryKey: ["settings", project.project_id] });
+              setProjectScope(project.project_id);
+              switchProject(project.project_id);
+              setAddProjectOpen(false);
+              setEmptyWizardDismissed(false);
+            }}
+          />
+        ) : null}
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-5">
@@ -362,6 +421,23 @@ function FilterBar({
         <Input label="Report label" value={filters.reportLabel} onChange={(value) => setFilter("reportLabel", value)} />
       </div>
     </Panel>
+  );
+}
+
+function ProjectEmptyState({ onAddProject }: { onAddProject: () => void }) {
+  return (
+    <section className="rounded-md border border-outline-ghost bg-surface-container-low p-6">
+      <div className="max-w-2xl space-y-3">
+        <p className="text-sm uppercase tracking-wide text-on-surface-variant">Collector Console</p>
+        <h1 className="text-2xl font-bold text-on-surface">No projects configured</h1>
+        <p className="text-sm text-on-surface-variant">
+          Add a project to define its ingest defaults, query fields, event groups, and funnels.
+        </p>
+        <button type="button" onClick={onAddProject} className="btn-primary">
+          Add Project
+        </button>
+      </div>
+    </section>
   );
 }
 

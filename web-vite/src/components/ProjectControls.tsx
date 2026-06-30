@@ -31,11 +31,21 @@ export default function ProjectControls({className}: {className?: string}) {
     queryKey: ["projects"],
     queryFn: () => api.projects(),
   });
-  const projectID = projectScope || "";
+  const projectsLoaded = !!projects.data;
+  const projectList = projects.data?.projects ?? [];
+  const projectID = projectsLoaded && projectList.some((project) => project.project_id === projectScope) ? projectScope || "" : "";
 
   useEffect(() => {
-    if (!projectScope && projects.data?.projects[0]?.project_id) {
-      setProjectScope(projects.data.projects[0].project_id);
+    if (!projects.data) return;
+    const firstProjectID = projects.data.projects[0]?.project_id ?? null;
+    if (!firstProjectID) {
+      if (projectScope) {
+        setProjectScope(null);
+      }
+      return;
+    }
+    if (!projectScope || !projects.data.projects.some((project) => project.project_id === projectScope)) {
+      setProjectScope(firstProjectID);
     }
   }, [projectScope, projects.data?.projects, setProjectScope]);
 
@@ -46,7 +56,8 @@ export default function ProjectControls({className}: {className?: string}) {
           <li>
             <ProjectSwitcher
               projectID={projectID}
-              projects={projects.data?.projects ?? []}
+              loading={!projectsLoaded}
+              projects={projectList}
               onChange={(nextProjectID) => setProjectScope(nextProjectID)}
             />
           </li>
@@ -75,25 +86,26 @@ export default function ProjectControls({className}: {className?: string}) {
 
 function ProjectSwitcher({
   projectID,
+  loading,
   projects,
   onChange,
 }: {
   projectID: string;
+  loading: boolean;
   projects: ProjectSummary[];
   onChange: (projectID: string) => void;
 }) {
-  const hasCurrent = projects.some((project) => project.project_id === projectID);
-  const options = !projectID || hasCurrent
-    ? projects
-    : [{ project_id: projectID, display_name: projectID, validation_mode: "", created_at: "", updated_at: "" }, ...projects];
+  const hasProjects = projects.length > 0;
+  const disabled = loading || !hasProjects;
   return (
     <select
       value={projectID}
       onChange={(event) => onChange(event.target.value)}
+      disabled={disabled}
       className="block min-w-56 text-sm mt-1 w-full rounded-md border border-outline-ghost bg-surface-container px-2 py-1 text-on-surface outline-none focus:border-primary"
     >
-      {!projectID ? <option value="">Select project</option> : null}
-      {options.map((project) => (
+      {!projectID ? <option value="">{loading ? "Loading projects" : hasProjects ? "Select project" : "No projects"}</option> : null}
+      {projects.map((project) => (
         <option key={project.project_id} value={project.project_id}>
           {project.display_name} ({project.project_id})
         </option>
@@ -102,7 +114,7 @@ function ProjectSwitcher({
   );
 }
 
-function AddProjectWizard({
+export function AddProjectWizard({
   onClose,
   onCreated,
 }: {
