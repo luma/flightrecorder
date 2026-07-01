@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/caarlos0/env/v11"
@@ -65,10 +66,14 @@ type Config struct {
 	// in production — the default is a placeholder only safe for local development.
 	// WARNING: AdminDevLogin defaults to true for convenience; set it to false in
 	// production or any shared environment, as it bypasses credential verification.
-	AdminSessionSecret   string        `env:"ADMIN_SESSION_SECRET" envDefault:"dev-admin-session-secret-change-me"`
-	AdminAllowedEmails   string        `env:"ADMIN_ALLOWED_EMAILS" envDefault:"admin@example.com"`
-	AdminDevLogin        bool          `env:"ADMIN_DEV_LOGIN" envDefault:"true"`
-	AdminSessionDuration time.Duration `env:"ADMIN_SESSION_DURATION" envDefault:"12h"`
+	AdminSessionSecret     string        `env:"ADMIN_SESSION_SECRET" envDefault:"dev-admin-session-secret-change-me"`
+	AdminAllowedDomains    string        `env:"ADMIN_ALLOWED_DOMAINS"`
+	AdminBootstrapEmail    string        `env:"ADMIN_BOOTSTRAP_EMAIL"`
+	AdminDevLogin          bool          `env:"ADMIN_DEV_LOGIN" envDefault:"true"`
+	AdminSessionDuration   time.Duration `env:"ADMIN_SESSION_DURATION" envDefault:"12h"`
+	GoogleOAuthClientID    string        `env:"GOOGLE_OAUTH_CLIENT_ID"`
+	GoogleOAuthSecret      string        `env:"GOOGLE_OAUTH_CLIENT_SECRET"`
+	GoogleOAuthRedirectURL string        `env:"GOOGLE_OAUTH_REDIRECT_URL"`
 }
 
 // MigrateConfig holds only the config needed to run database migrations.
@@ -135,6 +140,9 @@ func LoadConfig() (*Config, error) {
 	if err := cfg.LogLevel.UnmarshalText([]byte(cfg.LogLevelRaw)); err != nil {
 		return nil, fmt.Errorf("invalid log level: %w", err)
 	}
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
 
 	return cfg, nil
 }
@@ -192,12 +200,31 @@ func (c *Config) GetAPIExitGracePeriod() time.Duration {
 	return c.APIExitGracePeriod
 }
 
-// Validate checks that all required configuration is present and consistent.
-// Returns an error describing all missing/invalid configuration.
-// NOTE: the validation body is currently empty — all constraints are enforced
-// by env struct tags (e.g. notEmpty) at parse time in LoadConfig.
 func (c *Config) Validate() error {
 	var errors []string
+	if strings.EqualFold(c.Environment, "production") {
+		if strings.TrimSpace(c.AdminAllowedDomains) == "" {
+			errors = append(errors, "ADMIN_ALLOWED_DOMAINS is required in production")
+		}
+		if strings.TrimSpace(c.AdminBootstrapEmail) == "" {
+			errors = append(errors, "ADMIN_BOOTSTRAP_EMAIL is required in production")
+		}
+		if c.AdminBootstrapEmail != "" && !emailMatchesAllowedDomains(c.AdminBootstrapEmail, c.AdminAllowedDomains) {
+			errors = append(errors, "ADMIN_BOOTSTRAP_EMAIL must match ADMIN_ALLOWED_DOMAINS")
+		}
+		if c.AdminSessionSecret == "dev-admin-session-secret-change-me" {
+			errors = append(errors, "ADMIN_SESSION_SECRET must be changed in production")
+		}
+		if c.AdminDevLogin {
+			errors = append(errors, "ADMIN_DEV_LOGIN must be false in production")
+		}
+		if strings.TrimSpace(c.GoogleOAuthClientID) == "" {
+			errors = append(errors, "GOOGLE_OAUTH_CLIENT_ID is required in production")
+		}
+		if strings.TrimSpace(c.GoogleOAuthSecret) == "" {
+			errors = append(errors, "GOOGLE_OAUTH_CLIENT_SECRET is required in production")
+		}
+	}
 
 	if len(errors) > 0 {
 		return fmt.Errorf("configuration validation failed:\n  - %s", join(errors, "\n  - "))
@@ -216,4 +243,37 @@ func join(strs []string, sep string) string {
 		result += sep + s
 	}
 	return result
+}
+
+func emailMatchesAllowedDomains(email string, allowedDomains string) bool {
+	domain := EmailDomain(email)
+	if domain == "" {
+		return false
+	}
+	for _, allowed := range strings.Split(allowedDomains, ",") {
+		if NormalizeDomain(allowed) == domain {
+			return true
+		}
+	}
+	return false
+}
+
+// NormalizeEmail lowercases and trims an email address.
+func NormalizeEmail(email string) string {
+	return strings.ToLower(strings.TrimSpace(email))
+}
+
+// NormalizeDomain lowercases and trims a domain.
+func NormalizeDomain(domain string) string {
+	return strings.ToLower(strings.TrimSpace(domain))
+}
+
+// EmailDomain returns the normalized domain part of an email, or "" when the
+// email is missing a non-empty local or domain part.
+func EmailDomain(email string) string {
+	local, domain, ok := strings.Cut(NormalizeEmail(email), "@")
+	if !ok || local == "" || domain == "" {
+		return ""
+	}
+	return domain
 }

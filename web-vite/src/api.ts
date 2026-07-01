@@ -4,6 +4,8 @@ const userTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
 export interface User {
   email: string;
+  name?: string;
+  picture?: string;
 }
 
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
@@ -217,6 +219,37 @@ export interface IngestTokenSummary {
   created_at: string;
 }
 
+export interface AuthConfig {
+  google_enabled: boolean;
+  dev_login_enabled: boolean;
+}
+
+export interface AdminUserSummary {
+  id: string;
+  email: string;
+  name: string;
+  picture: string;
+  role: string;
+  enabled: boolean;
+  provider: string;
+  last_login_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AdminInvitationSummary {
+  id: string;
+  email: string;
+  expires_at: string;
+  created_at: string;
+  created_by_email?: string;
+}
+
+export interface CreateAdminInvitationResponse {
+  invitation: AdminInvitationSummary;
+  token: string;
+}
+
 export interface SettingsResponse {
   project: {
     project_id: string;
@@ -260,11 +293,18 @@ export interface CreateIngestTokenResponse {
 }
 
 export const api = {
+  googleLoginURL: () => `${ADMIN_API_BASE}/auth/google/start`,
+  authConfig: () => apiFetch<AuthConfig>("/auth/config"),
   me: () => apiFetch<{ user: User }>("/auth/me").then((resp) => resp.user),
   devLogin: (email: string) =>
     apiFetch<{ user: User }>("/auth/dev-login", {
       method: "POST",
       body: JSON.stringify({ email }),
+    }),
+  acceptInviteCode: (code: string) =>
+    apiFetch<{ user: User }>("/auth/invite-code", {
+      method: "POST",
+      body: JSON.stringify({ code }),
     }),
   logout: () => apiFetch<void>("/auth/logout", { method: "POST" }),
   summary: (filters: AdminFilters) => apiFetch<Summary>(`/summary${queryString(filters)}`),
@@ -321,4 +361,20 @@ export const api = {
         body: JSON.stringify({ enabled }),
       },
     ),
+  adminUsers: () => apiFetch<{ users: AdminUserSummary[] }>("/users"),
+  setAdminUserEnabled: (userID: string, enabled: boolean) =>
+    apiFetch<AdminUserSummary>(`/users/${encodeURIComponent(userID)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ enabled }),
+    }),
+  adminInvitations: () => apiFetch<{ invitations: AdminInvitationSummary[] }>("/invitations"),
+  createAdminInvitation: (email: string) =>
+    apiFetch<CreateAdminInvitationResponse>("/invitations", {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    }),
+  deleteAdminInvitation: (invitationID: string) =>
+    apiFetch<AdminInvitationSummary>(`/invitations/${encodeURIComponent(invitationID)}`, {
+      method: "DELETE",
+    }),
 };

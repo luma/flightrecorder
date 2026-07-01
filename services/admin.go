@@ -38,6 +38,11 @@ type Admin interface {
 	Settings(ctx context.Context, projectKey string) (SettingsResponse, error)
 	CreateIngestToken(ctx context.Context, projectKey string, req CreateIngestTokenRequest) (CreateIngestTokenResponse, error)
 	SetIngestTokenEnabled(ctx context.Context, projectKey string, tokenID string, enabled bool) (IngestTokenSummary, error)
+	ListAdminUsers(ctx context.Context) ([]AdminUserSummary, error)
+	SetAdminUserEnabled(ctx context.Context, userID string, enabled bool) (AdminUserSummary, error)
+	ListAdminInvitations(ctx context.Context) ([]AdminInvitationSummary, error)
+	CreateAdminInvitation(ctx context.Context, req CreateAdminInvitationRequest) (CreateAdminInvitationResponse, error)
+	DeleteAdminInvitation(ctx context.Context, invitationID string) (AdminInvitationSummary, error)
 }
 
 type TimeProjectFilter struct {
@@ -361,17 +366,53 @@ type CreateIngestTokenResponse struct {
 	Summary IngestTokenSummary `json:"summary"`
 }
 
+type AdminUserSummary struct {
+	ID          string `json:"id"`
+	Email       string `json:"email"`
+	Name        string `json:"name"`
+	Picture     string `json:"picture"`
+	Role        string `json:"role"`
+	Enabled     bool   `json:"enabled"`
+	Provider    string `json:"provider"`
+	LastLoginAt string `json:"last_login_at,omitempty"`
+	CreatedAt   string `json:"created_at"`
+	UpdatedAt   string `json:"updated_at"`
+}
+
+type AdminInvitationSummary struct {
+	ID             string `json:"id"`
+	Email          string `json:"email"`
+	ExpiresAt      string `json:"expires_at"`
+	CreatedAt      string `json:"created_at"`
+	CreatedByEmail string `json:"created_by_email,omitempty"`
+}
+
+type CreateAdminInvitationRequest struct {
+	Email string `json:"email"`
+}
+
+type CreateAdminInvitationResponse struct {
+	Invitation AdminInvitationSummary `json:"invitation"`
+	Token      string                 `json:"token"`
+}
+
 type adminService struct {
 	queries         *dbq.Queries
 	pool            db.Pool
 	screenshotStore ScreenshotStore
+	allowedDomains  map[string]struct{}
 }
 
-func NewAdminService(pool db.Pool, screenshotStore ScreenshotStore) Admin {
+func NewAdminService(pool db.Pool, screenshotStore ScreenshotStore, allowedDomains ...string) Admin {
+	rawAllowedDomains := ""
+	if len(allowedDomains) > 0 {
+		rawAllowedDomains = allowedDomains[0]
+	}
 	return &adminService{
 		queries:         dbq.New(pool),
 		pool:            pool,
 		screenshotStore: screenshotStore,
+		allowedDomains:  parseAllowedDomains(rawAllowedDomains),
 	}
 }
 
@@ -1038,6 +1079,137 @@ func (s *adminService) SetIngestTokenEnabled(ctx context.Context, projectKey str
 		return IngestTokenSummary{}, err
 	}
 	return ingestTokenSummary(row.ID, row.Name, row.Enabled, row.ExpiresAt, row.LastUsedAt, row.CreatedAt), nil
+}
+
+func (s *adminService) ListAdminUsers(ctx context.Context) ([]AdminUserSummary, error) {
+	rows, err := s.queries.AdminListUsers(ctx)
+	if err != nil {
+		return nil, err
+	}
+	users := make([]AdminUserSummary, 0, len(rows))
+	for _, row := range rows {
+		users = append(users, adminUserSummaryFromListRow(row))
+	}
+	return users, nil
+}
+
+func (s *adminService) SetAdminUserEnabled(ctx context.Context, userID string, enabled bool) (AdminUserSummary, error) {
+	parsedID, err := uuid.Parse(userID)
+	if err != nil {
+		return AdminUserSummary{}, fmt.Errorf("%w: user_id must be a UUID", ErrBadRequest)
+	}
+	if !enabled {
+		if session, ok := AdminSessionFromContext(ctx); ok {
+			currentUser, err := s.queries.AdminGetUserByEmail(ctx, session.Email)
+			if err != nil {
+				if !errors.Is(err, pgx.ErrNoRows) {
+					return AdminUserSummary{}, err
+				}
+			} else if currentUser.ID == parsedID {
+				return AdminUserSummary{}, fmt.Errorf("%w: cannot disable your own admin user", ErrBadRequest)
+			}
+		}
+		enabledCount, err := s.queries.AdminCountEnabledUsers(ctx)
+		if err != nil {
+			return AdminUserSummary{}, err
+		}
+		if enabledCount <= 1 {
+			return AdminUserSummary{}, fmt.Errorf("%w: cannot disable the last enabled admin user", ErrBadRequest)
+		}
+	}
+	row, err := s.queries.AdminSetUserEnabled(ctx, dbq.AdminSetUserEnabledParams{
+		ID:      parsedID,
+		Enabled: enabled,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return AdminUserSummary{}, fmt.Errorf("%w: admin user not found", ErrBadRequest)
+		}
+		return AdminUserSummary{}, err
+	}
+	return adminUserSummaryFromSetEnabledRow(row), nil
+}
+
+func (s *adminService) ListAdminInvitations(ctx context.Context) ([]AdminInvitationSummary, error) {
+	rows, err := s.queries.AdminListActiveInvitations(ctx)
+	if err != nil {
+		return nil, err
+	}
+	invitations := make([]AdminInvitationSummary, 0, len(rows))
+	for _, row := range rows {
+		invitations = append(invitations, AdminInvitationSummary{
+			ID:             row.ID.String(),
+			Email:          row.Email,
+			ExpiresAt:      formatTime(row.ExpiresAt),
+			CreatedAt:      formatTime(row.CreatedAt),
+			CreatedByEmail: textValue(row.CreatedByEmail),
+		})
+	}
+	return invitations, nil
+}
+
+func (s *adminService) CreateAdminInvitation(ctx context.Context, req CreateAdminInvitationRequest) (CreateAdminInvitationResponse, error) {
+	email := normalizeEmail(req.Email)
+	if email == "" || emailDomain(email) == "" {
+		return CreateAdminInvitationResponse{}, fmt.Errorf("%w: valid email is required", ErrBadRequest)
+	}
+	if len(s.allowedDomains) > 0 {
+		if _, ok := s.allowedDomains[emailDomain(email)]; !ok {
+			return CreateAdminInvitationResponse{}, fmt.Errorf("%w: email domain is not allowed", ErrBadRequest)
+		}
+	}
+	if _, err := s.queries.AdminGetUserByEmail(ctx, email); err == nil {
+		return CreateAdminInvitationResponse{}, fmt.Errorf("%w: admin user already exists", ErrBadRequest)
+	} else if !errors.Is(err, pgx.ErrNoRows) {
+		return CreateAdminInvitationResponse{}, err
+	}
+	token, tokenHash, err := NewAdminInviteToken()
+	if err != nil {
+		return CreateAdminInvitationResponse{}, err
+	}
+	var createdBy pgtype.UUID
+	if session, ok := AdminSessionFromContext(ctx); ok {
+		if user, err := s.queries.AdminGetUserByEmail(ctx, session.Email); err == nil {
+			createdBy = uuidParam(user.ID)
+		}
+	}
+	row, err := s.queries.AdminCreateInvitation(ctx, dbq.AdminCreateInvitationParams{
+		Email:                email,
+		TokenHash:            tokenHash,
+		CreatedByAdminUserID: createdBy,
+	})
+	if err != nil {
+		return CreateAdminInvitationResponse{}, err
+	}
+	return CreateAdminInvitationResponse{
+		Invitation: AdminInvitationSummary{
+			ID:        row.ID.String(),
+			Email:     row.Email,
+			ExpiresAt: formatTime(row.ExpiresAt),
+			CreatedAt: formatTime(row.CreatedAt),
+		},
+		Token: token,
+	}, nil
+}
+
+func (s *adminService) DeleteAdminInvitation(ctx context.Context, invitationID string) (AdminInvitationSummary, error) {
+	parsedID, err := uuid.Parse(invitationID)
+	if err != nil {
+		return AdminInvitationSummary{}, fmt.Errorf("%w: invitation_id must be a UUID", ErrBadRequest)
+	}
+	row, err := s.queries.AdminDeleteInvitation(ctx, parsedID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return AdminInvitationSummary{}, fmt.Errorf("%w: invitation not found", ErrBadRequest)
+		}
+		return AdminInvitationSummary{}, err
+	}
+	return AdminInvitationSummary{
+		ID:        row.ID.String(),
+		Email:     row.Email,
+		ExpiresAt: formatTime(row.ExpiresAt),
+		CreatedAt: formatTime(row.CreatedAt),
+	}, nil
 }
 
 func (s *adminService) loadProject(ctx context.Context, projectKey string) (dbq.GetProjectByKeyRow, error) {
@@ -2012,6 +2184,36 @@ func ingestTokenSummary(id uuid.UUID, name string, enabled bool, expiresAt pgtyp
 		ExpiresAt:  optionalTime(expiresAt),
 		LastUsedAt: optionalTime(lastUsedAt),
 		CreatedAt:  formatTime(createdAt),
+	}
+}
+
+func adminUserSummaryFromListRow(row dbq.AdminListUsersRow) AdminUserSummary {
+	return AdminUserSummary{
+		ID:          row.ID.String(),
+		Email:       row.Email,
+		Name:        row.Name,
+		Picture:     row.PictureUrl,
+		Role:        row.Role,
+		Enabled:     row.Enabled,
+		Provider:    row.Provider,
+		LastLoginAt: optionalTime(row.LastLoginAt),
+		CreatedAt:   formatTime(row.CreatedAt),
+		UpdatedAt:   formatTime(row.UpdatedAt),
+	}
+}
+
+func adminUserSummaryFromSetEnabledRow(row dbq.AdminSetUserEnabledRow) AdminUserSummary {
+	return AdminUserSummary{
+		ID:          row.ID.String(),
+		Email:       row.Email,
+		Name:        row.Name,
+		Picture:     row.PictureUrl,
+		Role:        row.Role,
+		Enabled:     row.Enabled,
+		Provider:    row.Provider,
+		LastLoginAt: optionalTime(row.LastLoginAt),
+		CreatedAt:   formatTime(row.CreatedAt),
+		UpdatedAt:   formatTime(row.UpdatedAt),
 	}
 }
 

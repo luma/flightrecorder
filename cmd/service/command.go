@@ -80,17 +80,26 @@ func start(parentCtx context.Context, cmd *cli.Command, cfg *env.Config, log *sl
 	}
 
 	authService := services.NewAuthService(dbPool)
+	adminUserStore := services.NewPostgresAdminUserStore(dbPool)
+	googleOAuth := services.NewGoogleOAuthService(services.GoogleOAuthOptions{
+		ClientID:     cfg.GoogleOAuthClientID,
+		ClientSecret: cfg.GoogleOAuthSecret,
+		RedirectURL:  googleOAuthRedirectURL(*cfg),
+	})
 	adminAuth := services.NewAdminAuthService(services.AdminAuthOptions{
 		SessionSecret:   cfg.AdminSessionSecret,
-		AllowedEmails:   cfg.AdminAllowedEmails,
+		AllowedDomains:  cfg.AdminAllowedDomains,
+		BootstrapEmail:  cfg.AdminBootstrapEmail,
 		DevLogin:        cfg.AdminDevLogin,
 		SessionDuration: cfg.AdminSessionDuration,
+		UserStore:       adminUserStore,
+		GoogleEnabled:   googleOAuth.Enabled(),
 	})
 	screenshotStore, err := CreateScreenshotStore(ctx, *cfg)
 	if err != nil {
 		return err
 	}
-	adminService := services.NewAdminService(dbPool, screenshotStore)
+	adminService := services.NewAdminService(dbPool, screenshotStore, cfg.AdminAllowedDomains)
 	ingestService := services.NewIngestService(services.IngestOptions{
 		DB:                      dbPool,
 		MaxEventsPerBatch:       cfg.MaxEventsPerBatch,
@@ -114,6 +123,7 @@ func start(parentCtx context.Context, cmd *cli.Command, cfg *env.Config, log *sl
 		IngestService:      ingestService,
 		AdminAuth:          adminAuth,
 		AdminService:       adminService,
+		GoogleOAuth:        googleOAuth,
 	})
 	if err != nil {
 		return fmt.Errorf("running API server: %w", err)
@@ -175,4 +185,11 @@ func apiBaseURL(cfg env.Config) string {
 		return "https://" + cfg.APIDomain
 	}
 	return fmt.Sprintf("http://localhost:%d", cfg.APIPort)
+}
+
+func googleOAuthRedirectURL(cfg env.Config) string {
+	if cfg.GoogleOAuthRedirectURL != "" {
+		return cfg.GoogleOAuthRedirectURL
+	}
+	return apiBaseURL(cfg) + "/api/admin/v1/auth/google/callback"
 }

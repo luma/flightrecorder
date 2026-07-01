@@ -14,6 +14,78 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const adminAcceptInvitation = `-- name: AdminAcceptInvitation :one
+UPDATE admin_invitations
+SET accepted_at = now(),
+    accepted_by_admin_user_id = $3
+WHERE email = $1
+  AND token_hash = $2
+  AND accepted_at IS NULL
+  AND deleted_at IS NULL
+  AND expires_at > now()
+RETURNING
+    id,
+    email,
+    expires_at,
+    accepted_at,
+    deleted_at,
+    created_at
+`
+
+type AdminAcceptInvitationParams struct {
+	Email                 string      `json:"email"`
+	TokenHash             string      `json:"token_hash"`
+	AcceptedByAdminUserID pgtype.UUID `json:"accepted_by_admin_user_id"`
+}
+
+type AdminAcceptInvitationRow struct {
+	ID         uuid.UUID          `json:"id"`
+	Email      string             `json:"email"`
+	ExpiresAt  time.Time          `json:"expires_at"`
+	AcceptedAt pgtype.Timestamptz `json:"accepted_at"`
+	DeletedAt  pgtype.Timestamptz `json:"deleted_at"`
+	CreatedAt  time.Time          `json:"created_at"`
+}
+
+func (q *Queries) AdminAcceptInvitation(ctx context.Context, arg AdminAcceptInvitationParams) (AdminAcceptInvitationRow, error) {
+	row := q.db.QueryRow(ctx, adminAcceptInvitation, arg.Email, arg.TokenHash, arg.AcceptedByAdminUserID)
+	var i AdminAcceptInvitationRow
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.ExpiresAt,
+		&i.AcceptedAt,
+		&i.DeletedAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const adminCountEnabledUsers = `-- name: AdminCountEnabledUsers :one
+SELECT count(*)::bigint
+FROM admin_users
+WHERE enabled = true
+`
+
+func (q *Queries) AdminCountEnabledUsers(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, adminCountEnabledUsers)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const adminCountUsers = `-- name: AdminCountUsers :one
+SELECT count(*)::bigint
+FROM admin_users
+`
+
+func (q *Queries) AdminCountUsers(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, adminCountUsers)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const adminCreateIngestToken = `-- name: AdminCreateIngestToken :one
 INSERT INTO ingest_tokens (
     project_id,
@@ -54,6 +126,53 @@ func (q *Queries) AdminCreateIngestToken(ctx context.Context, arg AdminCreateIng
 	return i, err
 }
 
+const adminCreateInvitation = `-- name: AdminCreateInvitation :one
+INSERT INTO admin_invitations (
+    email,
+    token_hash,
+    created_by_admin_user_id,
+    expires_at
+) VALUES (
+    $1, $2, $3, now() + interval '48 hours'
+)
+RETURNING
+    id,
+    email,
+    expires_at,
+    accepted_at,
+    deleted_at,
+    created_at
+`
+
+type AdminCreateInvitationParams struct {
+	Email                string      `json:"email"`
+	TokenHash            string      `json:"token_hash"`
+	CreatedByAdminUserID pgtype.UUID `json:"created_by_admin_user_id"`
+}
+
+type AdminCreateInvitationRow struct {
+	ID         uuid.UUID          `json:"id"`
+	Email      string             `json:"email"`
+	ExpiresAt  time.Time          `json:"expires_at"`
+	AcceptedAt pgtype.Timestamptz `json:"accepted_at"`
+	DeletedAt  pgtype.Timestamptz `json:"deleted_at"`
+	CreatedAt  time.Time          `json:"created_at"`
+}
+
+func (q *Queries) AdminCreateInvitation(ctx context.Context, arg AdminCreateInvitationParams) (AdminCreateInvitationRow, error) {
+	row := q.db.QueryRow(ctx, adminCreateInvitation, arg.Email, arg.TokenHash, arg.CreatedByAdminUserID)
+	var i AdminCreateInvitationRow
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.ExpiresAt,
+		&i.AcceptedAt,
+		&i.DeletedAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const adminCreateReportNote = `-- name: AdminCreateReportNote :one
 INSERT INTO report_notes (
     report_id,
@@ -79,6 +198,118 @@ func (q *Queries) AdminCreateReportNote(ctx context.Context, arg AdminCreateRepo
 	row := q.db.QueryRow(ctx, adminCreateReportNote, arg.ReportID, arg.Note)
 	var i AdminCreateReportNoteRow
 	err := row.Scan(&i.ID, &i.Note, &i.CreatedAt)
+	return i, err
+}
+
+const adminCreateUser = `-- name: AdminCreateUser :one
+INSERT INTO admin_users (
+    email,
+    oauth_subject,
+    role,
+    enabled,
+    name,
+    picture_url,
+    provider,
+    last_login_at
+) VALUES (
+    $1, $2, 'admin', true, $3, $4, $5, now()
+)
+RETURNING
+    id,
+    email,
+    oauth_subject,
+    role,
+    enabled,
+    name,
+    picture_url,
+    provider,
+    last_login_at,
+    created_at,
+    updated_at
+`
+
+type AdminCreateUserParams struct {
+	Email        string      `json:"email"`
+	OauthSubject pgtype.Text `json:"oauth_subject"`
+	Name         string      `json:"name"`
+	PictureUrl   string      `json:"picture_url"`
+	Provider     string      `json:"provider"`
+}
+
+type AdminCreateUserRow struct {
+	ID           uuid.UUID          `json:"id"`
+	Email        string             `json:"email"`
+	OauthSubject pgtype.Text        `json:"oauth_subject"`
+	Role         string             `json:"role"`
+	Enabled      bool               `json:"enabled"`
+	Name         string             `json:"name"`
+	PictureUrl   string             `json:"picture_url"`
+	Provider     string             `json:"provider"`
+	LastLoginAt  pgtype.Timestamptz `json:"last_login_at"`
+	CreatedAt    time.Time          `json:"created_at"`
+	UpdatedAt    time.Time          `json:"updated_at"`
+}
+
+func (q *Queries) AdminCreateUser(ctx context.Context, arg AdminCreateUserParams) (AdminCreateUserRow, error) {
+	row := q.db.QueryRow(ctx, adminCreateUser,
+		arg.Email,
+		arg.OauthSubject,
+		arg.Name,
+		arg.PictureUrl,
+		arg.Provider,
+	)
+	var i AdminCreateUserRow
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.OauthSubject,
+		&i.Role,
+		&i.Enabled,
+		&i.Name,
+		&i.PictureUrl,
+		&i.Provider,
+		&i.LastLoginAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const adminDeleteInvitation = `-- name: AdminDeleteInvitation :one
+UPDATE admin_invitations
+SET deleted_at = now()
+WHERE id = $1
+  AND accepted_at IS NULL
+  AND deleted_at IS NULL
+RETURNING
+    id,
+    email,
+    expires_at,
+    accepted_at,
+    deleted_at,
+    created_at
+`
+
+type AdminDeleteInvitationRow struct {
+	ID         uuid.UUID          `json:"id"`
+	Email      string             `json:"email"`
+	ExpiresAt  time.Time          `json:"expires_at"`
+	AcceptedAt pgtype.Timestamptz `json:"accepted_at"`
+	DeletedAt  pgtype.Timestamptz `json:"deleted_at"`
+	CreatedAt  time.Time          `json:"created_at"`
+}
+
+func (q *Queries) AdminDeleteInvitation(ctx context.Context, id uuid.UUID) (AdminDeleteInvitationRow, error) {
+	row := q.db.QueryRow(ctx, adminDeleteInvitation, id)
+	var i AdminDeleteInvitationRow
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.ExpiresAt,
+		&i.AcceptedAt,
+		&i.DeletedAt,
+		&i.CreatedAt,
+	)
 	return i, err
 }
 
@@ -221,6 +452,205 @@ func (q *Queries) AdminGetReport(ctx context.Context, arg AdminGetReportParams) 
 		&i.Payload,
 	)
 	return i, err
+}
+
+const adminGetUserByEmail = `-- name: AdminGetUserByEmail :one
+SELECT
+    id,
+    email,
+    oauth_subject,
+    role,
+    enabled,
+    name,
+    picture_url,
+    provider,
+    last_login_at,
+    created_at,
+    updated_at
+FROM admin_users
+WHERE email = $1
+`
+
+type AdminGetUserByEmailRow struct {
+	ID           uuid.UUID          `json:"id"`
+	Email        string             `json:"email"`
+	OauthSubject pgtype.Text        `json:"oauth_subject"`
+	Role         string             `json:"role"`
+	Enabled      bool               `json:"enabled"`
+	Name         string             `json:"name"`
+	PictureUrl   string             `json:"picture_url"`
+	Provider     string             `json:"provider"`
+	LastLoginAt  pgtype.Timestamptz `json:"last_login_at"`
+	CreatedAt    time.Time          `json:"created_at"`
+	UpdatedAt    time.Time          `json:"updated_at"`
+}
+
+func (q *Queries) AdminGetUserByEmail(ctx context.Context, email string) (AdminGetUserByEmailRow, error) {
+	row := q.db.QueryRow(ctx, adminGetUserByEmail, email)
+	var i AdminGetUserByEmailRow
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.OauthSubject,
+		&i.Role,
+		&i.Enabled,
+		&i.Name,
+		&i.PictureUrl,
+		&i.Provider,
+		&i.LastLoginAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const adminGetUserByID = `-- name: AdminGetUserByID :one
+SELECT
+    id,
+    email,
+    oauth_subject,
+    role,
+    enabled,
+    name,
+    picture_url,
+    provider,
+    last_login_at,
+    created_at,
+    updated_at
+FROM admin_users
+WHERE id = $1
+`
+
+type AdminGetUserByIDRow struct {
+	ID           uuid.UUID          `json:"id"`
+	Email        string             `json:"email"`
+	OauthSubject pgtype.Text        `json:"oauth_subject"`
+	Role         string             `json:"role"`
+	Enabled      bool               `json:"enabled"`
+	Name         string             `json:"name"`
+	PictureUrl   string             `json:"picture_url"`
+	Provider     string             `json:"provider"`
+	LastLoginAt  pgtype.Timestamptz `json:"last_login_at"`
+	CreatedAt    time.Time          `json:"created_at"`
+	UpdatedAt    time.Time          `json:"updated_at"`
+}
+
+func (q *Queries) AdminGetUserByID(ctx context.Context, id uuid.UUID) (AdminGetUserByIDRow, error) {
+	row := q.db.QueryRow(ctx, adminGetUserByID, id)
+	var i AdminGetUserByIDRow
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.OauthSubject,
+		&i.Role,
+		&i.Enabled,
+		&i.Name,
+		&i.PictureUrl,
+		&i.Provider,
+		&i.LastLoginAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const adminGetUserBySubject = `-- name: AdminGetUserBySubject :one
+SELECT
+    id,
+    email,
+    oauth_subject,
+    role,
+    enabled,
+    name,
+    picture_url,
+    provider,
+    last_login_at,
+    created_at,
+    updated_at
+FROM admin_users
+WHERE oauth_subject = $1
+`
+
+type AdminGetUserBySubjectRow struct {
+	ID           uuid.UUID          `json:"id"`
+	Email        string             `json:"email"`
+	OauthSubject pgtype.Text        `json:"oauth_subject"`
+	Role         string             `json:"role"`
+	Enabled      bool               `json:"enabled"`
+	Name         string             `json:"name"`
+	PictureUrl   string             `json:"picture_url"`
+	Provider     string             `json:"provider"`
+	LastLoginAt  pgtype.Timestamptz `json:"last_login_at"`
+	CreatedAt    time.Time          `json:"created_at"`
+	UpdatedAt    time.Time          `json:"updated_at"`
+}
+
+func (q *Queries) AdminGetUserBySubject(ctx context.Context, oauthSubject pgtype.Text) (AdminGetUserBySubjectRow, error) {
+	row := q.db.QueryRow(ctx, adminGetUserBySubject, oauthSubject)
+	var i AdminGetUserBySubjectRow
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.OauthSubject,
+		&i.Role,
+		&i.Enabled,
+		&i.Name,
+		&i.PictureUrl,
+		&i.Provider,
+		&i.LastLoginAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const adminListActiveInvitations = `-- name: AdminListActiveInvitations :many
+SELECT
+    i.id,
+    i.email,
+    i.expires_at,
+    i.created_at,
+    creator.email AS created_by_email
+FROM admin_invitations i
+LEFT JOIN admin_users creator ON creator.id = i.created_by_admin_user_id
+WHERE i.accepted_at IS NULL
+  AND i.deleted_at IS NULL
+  AND i.expires_at > now()
+ORDER BY i.created_at DESC
+`
+
+type AdminListActiveInvitationsRow struct {
+	ID             uuid.UUID   `json:"id"`
+	Email          string      `json:"email"`
+	ExpiresAt      time.Time   `json:"expires_at"`
+	CreatedAt      time.Time   `json:"created_at"`
+	CreatedByEmail pgtype.Text `json:"created_by_email"`
+}
+
+func (q *Queries) AdminListActiveInvitations(ctx context.Context) ([]AdminListActiveInvitationsRow, error) {
+	rows, err := q.db.Query(ctx, adminListActiveInvitations)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AdminListActiveInvitationsRow{}
+	for rows.Next() {
+		var i AdminListActiveInvitationsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Email,
+			&i.ExpiresAt,
+			&i.CreatedAt,
+			&i.CreatedByEmail,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const adminListEvents = `-- name: AdminListEvents :many
@@ -868,6 +1298,69 @@ func (q *Queries) AdminListReportsByLabel(ctx context.Context, arg AdminListRepo
 	return items, nil
 }
 
+const adminListUsers = `-- name: AdminListUsers :many
+SELECT
+    id,
+    email,
+    oauth_subject,
+    role,
+    enabled,
+    name,
+    picture_url,
+    provider,
+    last_login_at,
+    created_at,
+    updated_at
+FROM admin_users
+ORDER BY email ASC
+`
+
+type AdminListUsersRow struct {
+	ID           uuid.UUID          `json:"id"`
+	Email        string             `json:"email"`
+	OauthSubject pgtype.Text        `json:"oauth_subject"`
+	Role         string             `json:"role"`
+	Enabled      bool               `json:"enabled"`
+	Name         string             `json:"name"`
+	PictureUrl   string             `json:"picture_url"`
+	Provider     string             `json:"provider"`
+	LastLoginAt  pgtype.Timestamptz `json:"last_login_at"`
+	CreatedAt    time.Time          `json:"created_at"`
+	UpdatedAt    time.Time          `json:"updated_at"`
+}
+
+func (q *Queries) AdminListUsers(ctx context.Context) ([]AdminListUsersRow, error) {
+	rows, err := q.db.Query(ctx, adminListUsers)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AdminListUsersRow{}
+	for rows.Next() {
+		var i AdminListUsersRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Email,
+			&i.OauthSubject,
+			&i.Role,
+			&i.Enabled,
+			&i.Name,
+			&i.PictureUrl,
+			&i.Provider,
+			&i.LastLoginAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const adminPlayerTrace = `-- name: AdminPlayerTrace :many
 SELECT
     id,
@@ -1009,6 +1502,76 @@ func (q *Queries) AdminProjectSettings(ctx context.Context, projectKey string) (
 		&i.EventGroups,
 		&i.QueryFields,
 		&i.Funnels,
+	)
+	return i, err
+}
+
+const adminRefreshUserLogin = `-- name: AdminRefreshUserLogin :one
+UPDATE admin_users
+SET oauth_subject = COALESCE($1, oauth_subject),
+    name = $2,
+    picture_url = $3,
+    provider = $4,
+    last_login_at = now(),
+    updated_at = now()
+WHERE id = $5
+RETURNING
+    id,
+    email,
+    oauth_subject,
+    role,
+    enabled,
+    name,
+    picture_url,
+    provider,
+    last_login_at,
+    created_at,
+    updated_at
+`
+
+type AdminRefreshUserLoginParams struct {
+	OauthSubject pgtype.Text `json:"oauth_subject"`
+	Name         string      `json:"name"`
+	PictureUrl   string      `json:"picture_url"`
+	Provider     string      `json:"provider"`
+	ID           uuid.UUID   `json:"id"`
+}
+
+type AdminRefreshUserLoginRow struct {
+	ID           uuid.UUID          `json:"id"`
+	Email        string             `json:"email"`
+	OauthSubject pgtype.Text        `json:"oauth_subject"`
+	Role         string             `json:"role"`
+	Enabled      bool               `json:"enabled"`
+	Name         string             `json:"name"`
+	PictureUrl   string             `json:"picture_url"`
+	Provider     string             `json:"provider"`
+	LastLoginAt  pgtype.Timestamptz `json:"last_login_at"`
+	CreatedAt    time.Time          `json:"created_at"`
+	UpdatedAt    time.Time          `json:"updated_at"`
+}
+
+func (q *Queries) AdminRefreshUserLogin(ctx context.Context, arg AdminRefreshUserLoginParams) (AdminRefreshUserLoginRow, error) {
+	row := q.db.QueryRow(ctx, adminRefreshUserLogin,
+		arg.OauthSubject,
+		arg.Name,
+		arg.PictureUrl,
+		arg.Provider,
+		arg.ID,
+	)
+	var i AdminRefreshUserLoginRow
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.OauthSubject,
+		&i.Role,
+		&i.Enabled,
+		&i.Name,
+		&i.PictureUrl,
+		&i.Provider,
+		&i.LastLoginAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -1257,6 +1820,63 @@ func (q *Queries) AdminSetIngestTokenEnabled(ctx context.Context, arg AdminSetIn
 		&i.ExpiresAt,
 		&i.LastUsedAt,
 		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const adminSetUserEnabled = `-- name: AdminSetUserEnabled :one
+UPDATE admin_users
+SET enabled = $2,
+    updated_at = now()
+WHERE id = $1
+RETURNING
+    id,
+    email,
+    oauth_subject,
+    role,
+    enabled,
+    name,
+    picture_url,
+    provider,
+    last_login_at,
+    created_at,
+    updated_at
+`
+
+type AdminSetUserEnabledParams struct {
+	ID      uuid.UUID `json:"id"`
+	Enabled bool      `json:"enabled"`
+}
+
+type AdminSetUserEnabledRow struct {
+	ID           uuid.UUID          `json:"id"`
+	Email        string             `json:"email"`
+	OauthSubject pgtype.Text        `json:"oauth_subject"`
+	Role         string             `json:"role"`
+	Enabled      bool               `json:"enabled"`
+	Name         string             `json:"name"`
+	PictureUrl   string             `json:"picture_url"`
+	Provider     string             `json:"provider"`
+	LastLoginAt  pgtype.Timestamptz `json:"last_login_at"`
+	CreatedAt    time.Time          `json:"created_at"`
+	UpdatedAt    time.Time          `json:"updated_at"`
+}
+
+func (q *Queries) AdminSetUserEnabled(ctx context.Context, arg AdminSetUserEnabledParams) (AdminSetUserEnabledRow, error) {
+	row := q.db.QueryRow(ctx, adminSetUserEnabled, arg.ID, arg.Enabled)
+	var i AdminSetUserEnabledRow
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.OauthSubject,
+		&i.Role,
+		&i.Enabled,
+		&i.Name,
+		&i.PictureUrl,
+		&i.Provider,
+		&i.LastLoginAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }

@@ -17,8 +17,8 @@ fixture project, not because the collector requires that ID.
 - Game clients may gzip request bodies. The collector must accept both plain
   JSON and `Content-Encoding: gzip`.
 - Ingestion auth uses project-scoped bearer tokens.
-- Admin auth uses OAuth-backed browser sessions, with users allowlisted in
-  project or collector config.
+- Admin auth uses OAuth-backed browser sessions, a configured email-domain
+  gate, and invitation-managed users.
 - Server timestamps are ISO 8601 UTC strings.
 
 ## Ingestion Authentication

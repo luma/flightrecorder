@@ -12,14 +12,30 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type AdminInvitation struct {
+	ID                    uuid.UUID          `json:"id"`
+	Email                 string             `json:"email"`
+	TokenHash             string             `json:"token_hash"`
+	CreatedByAdminUserID  pgtype.UUID        `json:"created_by_admin_user_id"`
+	ExpiresAt             time.Time          `json:"expires_at"`
+	AcceptedAt            pgtype.Timestamptz `json:"accepted_at"`
+	AcceptedByAdminUserID pgtype.UUID        `json:"accepted_by_admin_user_id"`
+	DeletedAt             pgtype.Timestamptz `json:"deleted_at"`
+	CreatedAt             time.Time          `json:"created_at"`
+}
+
 type AdminUser struct {
-	ID           uuid.UUID   `json:"id"`
-	Email        string      `json:"email"`
-	OauthSubject pgtype.Text `json:"oauth_subject"`
-	Role         string      `json:"role"`
-	Enabled      bool        `json:"enabled"`
-	CreatedAt    time.Time   `json:"created_at"`
-	UpdatedAt    time.Time   `json:"updated_at"`
+	ID           uuid.UUID          `json:"id"`
+	Email        string             `json:"email"`
+	OauthSubject pgtype.Text        `json:"oauth_subject"`
+	Role         string             `json:"role"`
+	Enabled      bool               `json:"enabled"`
+	CreatedAt    time.Time          `json:"created_at"`
+	UpdatedAt    time.Time          `json:"updated_at"`
+	Name         string             `json:"name"`
+	PictureUrl   string             `json:"picture_url"`
+	Provider     string             `json:"provider"`
+	LastLoginAt  pgtype.Timestamptz `json:"last_login_at"`
 }
 
 type Batch struct {

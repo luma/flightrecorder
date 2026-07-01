@@ -500,3 +500,204 @@ SET enabled = $3
 WHERE project_id = $1
   AND id = $2
 RETURNING id, name, enabled, expires_at, last_used_at, created_at;
+
+-- name: AdminCountUsers :one
+SELECT count(*)::bigint
+FROM admin_users;
+
+-- name: AdminCountEnabledUsers :one
+SELECT count(*)::bigint
+FROM admin_users
+WHERE enabled = true;
+
+-- name: AdminGetUserByID :one
+SELECT
+    id,
+    email,
+    oauth_subject,
+    role,
+    enabled,
+    name,
+    picture_url,
+    provider,
+    last_login_at,
+    created_at,
+    updated_at
+FROM admin_users
+WHERE id = $1;
+
+-- name: AdminGetUserByEmail :one
+SELECT
+    id,
+    email,
+    oauth_subject,
+    role,
+    enabled,
+    name,
+    picture_url,
+    provider,
+    last_login_at,
+    created_at,
+    updated_at
+FROM admin_users
+WHERE email = $1;
+
+-- name: AdminGetUserBySubject :one
+SELECT
+    id,
+    email,
+    oauth_subject,
+    role,
+    enabled,
+    name,
+    picture_url,
+    provider,
+    last_login_at,
+    created_at,
+    updated_at
+FROM admin_users
+WHERE oauth_subject = $1;
+
+-- name: AdminCreateUser :one
+INSERT INTO admin_users (
+    email,
+    oauth_subject,
+    role,
+    enabled,
+    name,
+    picture_url,
+    provider,
+    last_login_at
+) VALUES (
+    $1, $2, 'admin', true, $3, $4, $5, now()
+)
+RETURNING
+    id,
+    email,
+    oauth_subject,
+    role,
+    enabled,
+    name,
+    picture_url,
+    provider,
+    last_login_at,
+    created_at,
+    updated_at;
+
+-- name: AdminRefreshUserLogin :one
+UPDATE admin_users
+SET oauth_subject = COALESCE(sqlc.narg('oauth_subject'), oauth_subject),
+    name = sqlc.arg('name'),
+    picture_url = sqlc.arg('picture_url'),
+    provider = sqlc.arg('provider'),
+    last_login_at = now(),
+    updated_at = now()
+WHERE id = sqlc.arg('id')
+RETURNING
+    id,
+    email,
+    oauth_subject,
+    role,
+    enabled,
+    name,
+    picture_url,
+    provider,
+    last_login_at,
+    created_at,
+    updated_at;
+
+-- name: AdminListUsers :many
+SELECT
+    id,
+    email,
+    oauth_subject,
+    role,
+    enabled,
+    name,
+    picture_url,
+    provider,
+    last_login_at,
+    created_at,
+    updated_at
+FROM admin_users
+ORDER BY email ASC;
+
+-- name: AdminSetUserEnabled :one
+UPDATE admin_users
+SET enabled = $2,
+    updated_at = now()
+WHERE id = $1
+RETURNING
+    id,
+    email,
+    oauth_subject,
+    role,
+    enabled,
+    name,
+    picture_url,
+    provider,
+    last_login_at,
+    created_at,
+    updated_at;
+
+-- name: AdminCreateInvitation :one
+INSERT INTO admin_invitations (
+    email,
+    token_hash,
+    created_by_admin_user_id,
+    expires_at
+) VALUES (
+    $1, $2, $3, now() + interval '48 hours'
+)
+RETURNING
+    id,
+    email,
+    expires_at,
+    accepted_at,
+    deleted_at,
+    created_at;
+
+-- name: AdminListActiveInvitations :many
+SELECT
+    i.id,
+    i.email,
+    i.expires_at,
+    i.created_at,
+    creator.email AS created_by_email
+FROM admin_invitations i
+LEFT JOIN admin_users creator ON creator.id = i.created_by_admin_user_id
+WHERE i.accepted_at IS NULL
+  AND i.deleted_at IS NULL
+  AND i.expires_at > now()
+ORDER BY i.created_at DESC;
+
+-- name: AdminDeleteInvitation :one
+UPDATE admin_invitations
+SET deleted_at = now()
+WHERE id = $1
+  AND accepted_at IS NULL
+  AND deleted_at IS NULL
+RETURNING
+    id,
+    email,
+    expires_at,
+    accepted_at,
+    deleted_at,
+    created_at;
+
+-- name: AdminAcceptInvitation :one
+UPDATE admin_invitations
+SET accepted_at = now(),
+    accepted_by_admin_user_id = $3
+WHERE email = $1
+  AND token_hash = $2
+  AND accepted_at IS NULL
+  AND deleted_at IS NULL
+  AND expires_at > now()
+RETURNING
+    id,
+    email,
+    expires_at,
+    accepted_at,
+    deleted_at,
+    created_at;

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/cloudwego/hertz/pkg/protocol"
@@ -14,7 +15,16 @@ import (
 	"github.com/luma/flightrecorder/services"
 )
 
-func registerAdminRoutes(adminGroup *route.RouterGroup, adminAuth services.AdminAuth, adminSvc services.Admin, log *slog.Logger, secureCookies bool) {
+const (
+	pendingAdminCookieName = "flightrecorder_pending_admin"
+	oauthStateCookieName   = "flightrecorder_oauth_state"
+)
+
+func registerAdminRoutes(adminGroup *route.RouterGroup, adminAuth services.AdminAuth, adminSvc services.Admin, googleOAuth services.GoogleOAuth, log *slog.Logger, secureCookies bool) {
+	adminGroup.GET("/auth/config", makeAdminAuthConfig(adminAuth))
+	adminGroup.GET("/auth/google/start", makeAdminGoogleStart(adminAuth, googleOAuth, secureCookies))
+	adminGroup.GET("/auth/google/callback", makeAdminGoogleCallback(adminAuth, googleOAuth, secureCookies))
+	adminGroup.POST("/auth/invite-code", makeAdminAcceptInviteCode(adminAuth, secureCookies))
 	adminGroup.POST("/auth/dev-login", makeAdminDevLogin(adminAuth, secureCookies))
 	adminGroup.POST("/auth/logout", makeAdminLogout(secureCookies))
 	adminGroup.GET("/auth/me", makeAdminMe(adminAuth))
@@ -36,6 +46,104 @@ func registerAdminRoutes(adminGroup *route.RouterGroup, adminAuth services.Admin
 	protected.GET("/settings", makeAdminSettings(adminSvc))
 	protected.POST("/settings/ingest-tokens", makeAdminCreateIngestToken(adminSvc))
 	protected.PATCH("/settings/ingest-tokens/:token_id", makeAdminSetIngestTokenEnabled(adminSvc))
+	protected.GET("/users", makeAdminUsers(adminSvc))
+	protected.PATCH("/users/:user_id", makeAdminSetUserEnabled(adminSvc))
+	protected.GET("/invitations", makeAdminInvitations(adminSvc))
+	protected.POST("/invitations", makeAdminCreateInvitation(adminSvc))
+	protected.DELETE("/invitations/:invitation_id", makeAdminDeleteInvitation(adminSvc))
+}
+
+func makeAdminAuthConfig(adminAuth services.AdminAuth) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		_ = ctx
+		c.JSON(consts.StatusOK, map[string]bool{
+			"google_enabled":    adminAuth.GoogleLoginEnabled(),
+			"dev_login_enabled": adminAuth.DevLoginEnabled(),
+		})
+	}
+}
+
+func makeAdminGoogleStart(adminAuth services.AdminAuth, googleOAuth services.GoogleOAuth, secureCookies bool) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		_ = ctx
+		if !googleOAuth.Enabled() {
+			c.JSON(consts.StatusNotFound, map[string]string{"error": "google login is not configured"})
+			return
+		}
+		state, err := adminAuth.IssueOAuthState(safeReturnPath(query(c, "return_path")))
+		if err != nil {
+			redirectLoginError(c, "login_failed")
+			return
+		}
+		setCookie(c, oauthStateCookieName, state, 10*60, "/api/admin/v1/auth/google", secureCookies)
+		c.Redirect(consts.StatusTemporaryRedirect, []byte(googleOAuth.AuthCodeURL(state)))
+	}
+}
+
+func makeAdminGoogleCallback(adminAuth services.AdminAuth, googleOAuth services.GoogleOAuth, secureCookies bool) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		stateParam := query(c, "state")
+		stateCookie := string(c.Cookie(oauthStateCookieName))
+		setCookie(c, oauthStateCookieName, "", -1, "/api/admin/v1/auth/google", secureCookies)
+		if stateParam == "" || stateCookie == "" || stateParam != stateCookie {
+			redirectLoginError(c, "invalid_state")
+			return
+		}
+		returnPath, err := adminAuth.ValidateOAuthState(stateParam)
+		if err != nil {
+			redirectLoginError(c, "invalid_state")
+			return
+		}
+		identity, err := googleOAuth.Exchange(ctx, query(c, "code"))
+		if err != nil {
+			redirectLoginError(c, "oauth_failed")
+			return
+		}
+		result, err := adminAuth.IssueOAuthSession(ctx, identity)
+		if err != nil {
+			redirectLoginError(c, "login_failed")
+			return
+		}
+		switch result.Status {
+		case services.AdminOAuthStatusAuthenticated:
+			setAdminCookie(c, result.Token, adminAuth.SessionMaxAgeSeconds(), secureCookies)
+			c.Redirect(consts.StatusTemporaryRedirect, []byte(defaultReturnPath(returnPath)))
+		case services.AdminOAuthStatusPendingInvite:
+			setCookie(c, pendingAdminCookieName, result.PendingToken, 10*60, "/api/admin/v1/auth", secureCookies)
+			c.Redirect(consts.StatusTemporaryRedirect, []byte("/accept-invite"))
+		case services.AdminOAuthStatusDisabled:
+			redirectLoginError(c, "disabled")
+		case services.AdminOAuthStatusDomainDenied:
+			redirectLoginError(c, "domain_denied")
+		default:
+			redirectLoginError(c, "login_failed")
+		}
+	}
+}
+
+func makeAdminAcceptInviteCode(adminAuth services.AdminAuth, secureCookies bool) app.HandlerFunc {
+	type request struct {
+		Code string `json:"code"`
+	}
+	return func(ctx context.Context, c *app.RequestContext) {
+		var req request
+		if err := decodeJSONBody(c, &req); err != nil {
+			writeServiceError(c, fmt.Errorf("%w: %v", services.ErrBadRequest, err))
+			return
+		}
+		token, session, err := adminAuth.AcceptInvitation(ctx, string(c.Cookie(pendingAdminCookieName)), req.Code)
+		if err != nil {
+			c.JSON(consts.StatusUnauthorized, map[string]string{"error": "invalid invitation code"})
+			return
+		}
+		_ = session
+		setCookie(c, pendingAdminCookieName, "", -1, "/api/admin/v1/auth", secureCookies)
+		setAdminCookie(c, token, adminAuth.SessionMaxAgeSeconds(), secureCookies)
+		c.JSON(consts.StatusOK, map[string]any{
+			"user":       adminUserJSON(session),
+			"expires_at": session.ExpiresAt,
+		})
+	}
 }
 
 func makeAdminDevLogin(adminAuth services.AdminAuth, secureCookies bool) app.HandlerFunc {
@@ -48,16 +156,14 @@ func makeAdminDevLogin(adminAuth services.AdminAuth, secureCookies bool) app.Han
 			writeServiceError(c, fmt.Errorf("%w: %v", services.ErrBadRequest, err))
 			return
 		}
-		token, session, err := adminAuth.IssueDevSession(req.Email)
+		token, session, err := adminAuth.IssueDevSession(ctx, req.Email)
 		if err != nil {
 			c.JSON(consts.StatusUnauthorized, map[string]string{"error": "admin authentication failed"})
 			return
 		}
-		setAdminCookie(c, token, 12*60*60, secureCookies)
+		setAdminCookie(c, token, adminAuth.SessionMaxAgeSeconds(), secureCookies)
 		c.JSON(consts.StatusOK, map[string]any{
-			"user": map[string]string{
-				"email": session.Email,
-			},
+			"user":       adminUserJSON(session),
 			"expires_at": session.ExpiresAt,
 		})
 	}
@@ -67,6 +173,7 @@ func makeAdminLogout(secureCookies bool) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
 		_ = ctx
 		setAdminCookie(c, "", -1, secureCookies)
+		setCookie(c, pendingAdminCookieName, "", -1, "/api/admin/v1/auth", secureCookies)
 		c.JSON(consts.StatusOK, map[string]bool{"ok": true})
 	}
 }
@@ -74,15 +181,13 @@ func makeAdminLogout(secureCookies bool) app.HandlerFunc {
 func makeAdminMe(adminAuth services.AdminAuth) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
 		_ = ctx
-		session, err := adminAuth.ValidateSession(string(c.Cookie(auth.AdminSessionCookieName)))
+		session, err := adminAuth.ValidateSession(ctx, string(c.Cookie(auth.AdminSessionCookieName)))
 		if err != nil {
 			c.JSON(consts.StatusUnauthorized, map[string]string{"error": "admin authentication required"})
 			return
 		}
 		c.JSON(consts.StatusOK, map[string]any{
-			"user": map[string]string{
-				"email": session.Email,
-			},
+			"user":       adminUserJSON(session),
 			"expires_at": session.ExpiresAt,
 		})
 	}
@@ -360,6 +465,74 @@ func makeAdminSetIngestTokenEnabled(adminSvc services.Admin) app.HandlerFunc {
 	}
 }
 
+func makeAdminUsers(adminSvc services.Admin) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		users, err := adminSvc.ListAdminUsers(ctx)
+		if err != nil {
+			writeServiceError(c, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"users": users})
+	}
+}
+
+func makeAdminSetUserEnabled(adminSvc services.Admin) app.HandlerFunc {
+	type request struct {
+		Enabled bool `json:"enabled"`
+	}
+	return func(ctx context.Context, c *app.RequestContext) {
+		var req request
+		if err := decodeJSONBody(c, &req); err != nil {
+			writeServiceError(c, fmt.Errorf("%w: %v", services.ErrBadRequest, err))
+			return
+		}
+		user, err := adminSvc.SetAdminUserEnabled(ctx, c.Param("user_id"), req.Enabled)
+		if err != nil {
+			writeServiceError(c, err)
+			return
+		}
+		c.JSON(consts.StatusOK, user)
+	}
+}
+
+func makeAdminInvitations(adminSvc services.Admin) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		invitations, err := adminSvc.ListAdminInvitations(ctx)
+		if err != nil {
+			writeServiceError(c, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"invitations": invitations})
+	}
+}
+
+func makeAdminCreateInvitation(adminSvc services.Admin) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		var req services.CreateAdminInvitationRequest
+		if err := decodeJSONBody(c, &req); err != nil {
+			writeServiceError(c, fmt.Errorf("%w: %v", services.ErrBadRequest, err))
+			return
+		}
+		invitation, err := adminSvc.CreateAdminInvitation(ctx, req)
+		if err != nil {
+			writeServiceError(c, err)
+			return
+		}
+		c.JSON(consts.StatusOK, invitation)
+	}
+}
+
+func makeAdminDeleteInvitation(adminSvc services.Admin) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		invitation, err := adminSvc.DeleteAdminInvitation(ctx, c.Param("invitation_id"))
+		if err != nil {
+			writeServiceError(c, err)
+			return
+		}
+		c.JSON(consts.StatusOK, invitation)
+	}
+}
+
 func adminTimeFilter(c *app.RequestContext) (services.TimeProjectFilter, error) {
 	return services.ParseTimeRange(query(c, "project_id"), query(c, "from"), query(c, "to"))
 }
@@ -373,5 +546,39 @@ func query(c *app.RequestContext, name string) string {
 }
 
 func setAdminCookie(c *app.RequestContext, value string, maxAge int, secure bool) {
-	c.SetCookie(auth.AdminSessionCookieName, value, maxAge, "/", "", protocol.CookieSameSiteLaxMode, secure, true)
+	setCookie(c, auth.AdminSessionCookieName, value, maxAge, "/", secure)
+}
+
+func setCookie(c *app.RequestContext, name string, value string, maxAge int, path string, secure bool) {
+	c.SetCookie(name, value, maxAge, path, "", protocol.CookieSameSiteLaxMode, secure, true)
+}
+
+func adminUserJSON(session services.AdminSession) map[string]string {
+	return map[string]string{
+		"email":   session.Email,
+		"name":    session.Name,
+		"picture": session.Picture,
+	}
+}
+
+func safeReturnPath(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" || !strings.HasPrefix(value, "/") || strings.HasPrefix(value, "//") {
+		return ""
+	}
+	return value
+}
+
+func defaultReturnPath(value string) string {
+	if safe := safeReturnPath(value); safe != "" {
+		return safe
+	}
+	return "/"
+}
+
+func redirectLoginError(c *app.RequestContext, reason string) {
+	if reason == "" {
+		reason = "login_failed"
+	}
+	c.Redirect(consts.StatusTemporaryRedirect, []byte("/login-error?reason="+reason))
 }

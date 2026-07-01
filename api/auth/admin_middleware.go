@@ -15,7 +15,7 @@ const AdminSessionCookieName = "flightrecorder_admin"
 func RequireAdmin(adminAuth services.AdminAuth, log *slog.Logger) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
 		token := string(c.Cookie(AdminSessionCookieName))
-		session, err := adminAuth.ValidateSession(token)
+		session, err := adminAuth.ValidateSession(ctx, token)
 		if err != nil {
 			log.DebugContext(ctx, "admin session auth failed", slog.String("err", err.Error()))
 			c.JSON(consts.StatusUnauthorized, map[string]string{"error": "admin authentication required"})

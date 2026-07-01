@@ -8,13 +8,24 @@ import (
 	"context"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type Querier interface {
+	AdminAcceptInvitation(ctx context.Context, arg AdminAcceptInvitationParams) (AdminAcceptInvitationRow, error)
+	AdminCountEnabledUsers(ctx context.Context) (int64, error)
+	AdminCountUsers(ctx context.Context) (int64, error)
 	AdminCreateIngestToken(ctx context.Context, arg AdminCreateIngestTokenParams) (AdminCreateIngestTokenRow, error)
+	AdminCreateInvitation(ctx context.Context, arg AdminCreateInvitationParams) (AdminCreateInvitationRow, error)
 	AdminCreateReportNote(ctx context.Context, arg AdminCreateReportNoteParams) (AdminCreateReportNoteRow, error)
+	AdminCreateUser(ctx context.Context, arg AdminCreateUserParams) (AdminCreateUserRow, error)
+	AdminDeleteInvitation(ctx context.Context, id uuid.UUID) (AdminDeleteInvitationRow, error)
 	AdminEventTypes(ctx context.Context, projectID uuid.UUID) ([]AdminEventTypesRow, error)
 	AdminGetReport(ctx context.Context, arg AdminGetReportParams) (AdminGetReportRow, error)
+	AdminGetUserByEmail(ctx context.Context, email string) (AdminGetUserByEmailRow, error)
+	AdminGetUserByID(ctx context.Context, id uuid.UUID) (AdminGetUserByIDRow, error)
+	AdminGetUserBySubject(ctx context.Context, oauthSubject pgtype.Text) (AdminGetUserBySubjectRow, error)
+	AdminListActiveInvitations(ctx context.Context) ([]AdminListActiveInvitationsRow, error)
 	AdminListEvents(ctx context.Context, arg AdminListEventsParams) ([]AdminListEventsRow, error)
 	AdminListEventsByField(ctx context.Context, arg AdminListEventsByFieldParams) ([]AdminListEventsByFieldRow, error)
 	AdminListIngestTokens(ctx context.Context, projectID uuid.UUID) ([]AdminListIngestTokensRow, error)
@@ -22,12 +33,15 @@ type Querier interface {
 	AdminListReportNotes(ctx context.Context, reportID uuid.UUID) ([]AdminListReportNotesRow, error)
 	AdminListReports(ctx context.Context, arg AdminListReportsParams) ([]AdminListReportsRow, error)
 	AdminListReportsByLabel(ctx context.Context, arg AdminListReportsByLabelParams) ([]AdminListReportsByLabelRow, error)
+	AdminListUsers(ctx context.Context) ([]AdminListUsersRow, error)
 	AdminPlayerTrace(ctx context.Context, arg AdminPlayerTraceParams) ([]AdminPlayerTraceRow, error)
 	AdminProjectSettings(ctx context.Context, projectKey string) (AdminProjectSettingsRow, error)
+	AdminRefreshUserLogin(ctx context.Context, arg AdminRefreshUserLoginParams) (AdminRefreshUserLoginRow, error)
 	AdminRegionHeatmap(ctx context.Context, arg AdminRegionHeatmapParams) ([]AdminRegionHeatmapRow, error)
 	AdminRegionHeatmapByField(ctx context.Context, arg AdminRegionHeatmapByFieldParams) ([]AdminRegionHeatmapByFieldRow, error)
 	AdminReportTrace(ctx context.Context, arg AdminReportTraceParams) ([]AdminReportTraceRow, error)
 	AdminSetIngestTokenEnabled(ctx context.Context, arg AdminSetIngestTokenEnabledParams) (AdminSetIngestTokenEnabledRow, error)
+	AdminSetUserEnabled(ctx context.Context, arg AdminSetUserEnabledParams) (AdminSetUserEnabledRow, error)
 	AdminSummary(ctx context.Context, arg AdminSummaryParams) (AdminSummaryRow, error)
 	AdminUpdateReport(ctx context.Context, arg AdminUpdateReportParams) (AdminUpdateReportRow, error)
 	AdminUpsertProject(ctx context.Context, arg AdminUpsertProjectParams) (AdminUpsertProjectRow, error)

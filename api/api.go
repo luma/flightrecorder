@@ -44,6 +44,7 @@ type Options struct {
 	IngestService services.Ingest
 	AdminAuth     services.AdminAuth
 	AdminService  services.Admin
+	GoogleOAuth   services.GoogleOAuth
 }
 
 func (o *Options) Validate() error {
@@ -67,6 +68,9 @@ func (o *Options) Validate() error {
 	}
 	if o.AdminService == nil {
 		errs = append(errs, "AdminService is required")
+	}
+	if o.GoogleOAuth == nil {
+		errs = append(errs, "GoogleOAuth is required")
 	}
 
 	if len(errs) > 0 {
@@ -138,7 +142,7 @@ func Run(opts Options) error {
 	protected.POST("/bug-reports", makeHandleBugReports(opts.IngestService))
 
 	admin := h.Group("/api/admin/v1")
-	registerAdminRoutes(admin, opts.AdminAuth, opts.AdminService, log, auth.SecureCookie(opts.APIBaseURL))
+	registerAdminRoutes(admin, opts.AdminAuth, opts.AdminService, opts.GoogleOAuth, log, auth.SecureCookie(opts.APIBaseURL))
 
 	// Serve embedded SPA assets. Static files (JS, CSS) are served directly;
 	// all other paths fall back to index.html for client-side routing.

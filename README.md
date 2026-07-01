@@ -94,7 +94,8 @@ POSTGRES_SSL_MODE=disable
 REPORT_STORAGE_BACKEND=local
 REPORT_STORAGE_DIR=var/reports
 ADMIN_DEV_LOGIN=true
-ADMIN_ALLOWED_EMAILS=admin@example.com
+ADMIN_ALLOWED_DOMAINS=example.com
+ADMIN_BOOTSTRAP_EMAIL=admin@example.com
 ```
 
 You can override any value with environment variables or a local `.env` file.
@@ -151,8 +152,8 @@ admin@example.com
 
 The local login is controlled by `ADMIN_DEV_LOGIN=true`. For shared or
 production-like environments, set `ADMIN_DEV_LOGIN=false`, replace
-`ADMIN_SESSION_SECRET`, and configure the real auth path before exposing the
-service.
+`ADMIN_SESSION_SECRET`, and configure Google OAuth before exposing the service.
+See [Google OAuth Setup](docs/google-oauth-setup.md).
 
 ### 4. Create a Local Project
 
