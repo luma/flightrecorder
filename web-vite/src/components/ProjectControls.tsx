@@ -21,6 +21,35 @@ import {
 } from "./ProjectSchemaBuilders";
 
 const reportStatuses = ["new", "seen", "needs_more_info", "reproduced", "fixed", "wont_fix"];
+const defaultEventGroups: EventGroupDraft[] = [
+  { name: "report", events: "bug_report" },
+];
+const defaultQueryFields: QueryField[] = [
+  {
+    key: "report.mood",
+    type: "number",
+    label: "Mood",
+    source: "payload.mood",
+    filterable: true,
+    aggregations: ["min", "max", "avg", "histogram"],
+  },
+  {
+    key: "report.mood_label",
+    type: "string",
+    label: "Mood Label",
+    source: "payload.mood_label",
+    filterable: true,
+    aggregations: ["count"],
+  },
+  {
+    key: "report.source",
+    type: "string",
+    label: "Report Source",
+    source: "payload.report_source",
+    filterable: true,
+    aggregations: ["count"],
+  },
+];
 
 export default function ProjectControls({className}: {className?: string}) {
   const queryClient = useQueryClient();
@@ -136,8 +165,8 @@ export function AddProjectWizard({
   const [reportStatusesValue, setReportStatusesValue] = useState(reportStatuses.join(", "));
   const [reportLabelsValue, setReportLabelsValue] = useState("bug, sentiment, balance, mission, combat, economy, ui");
   const [rateLimitSeconds, setRateLimitSeconds] = useState("60");
-  const [eventGroups, setEventGroups] = useState<EventGroupDraft[]>([]);
-  const [queryFields, setQueryFields] = useState<QueryField[]>([]);
+  const [eventGroups, setEventGroups] = useState<EventGroupDraft[]>(defaultEventGroups);
+  const [queryFields, setQueryFields] = useState<QueryField[]>(defaultQueryFields);
   const [funnels, setFunnels] = useState<FunnelDefinition[]>([]);
   const [validationError, setValidationError] = useState("");
 

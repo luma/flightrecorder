@@ -64,12 +64,12 @@ type Config struct {
 	// Admin UI authentication.
 	// WARNING: AdminSessionSecret must be overridden with a strong random value
 	// in production — the default is a placeholder only safe for local development.
-	// WARNING: AdminDevLogin defaults to true for convenience; set it to false in
-	// production or any shared environment, as it bypasses credential verification.
+	// WARNING: AdminDevLogin is only for local development, as it bypasses
+	// credential verification.
 	AdminSessionSecret     string        `env:"ADMIN_SESSION_SECRET" envDefault:"dev-admin-session-secret-change-me"`
 	AdminAllowedDomains    string        `env:"ADMIN_ALLOWED_DOMAINS"`
 	AdminBootstrapEmail    string        `env:"ADMIN_BOOTSTRAP_EMAIL"`
-	AdminDevLogin          bool          `env:"ADMIN_DEV_LOGIN" envDefault:"true"`
+	AdminDevLogin          bool          `env:"ADMIN_DEV_LOGIN" envDefault:"false"`
 	AdminSessionDuration   time.Duration `env:"ADMIN_SESSION_DURATION" envDefault:"12h"`
 	GoogleOAuthClientID    string        `env:"GOOGLE_OAUTH_CLIENT_ID"`
 	GoogleOAuthSecret      string        `env:"GOOGLE_OAUTH_CLIENT_SECRET"`
@@ -203,26 +203,28 @@ func (c *Config) GetAPIExitGracePeriod() time.Duration {
 func (c *Config) Validate() error {
 	var errors []string
 	if strings.EqualFold(c.Environment, "production") {
-		if strings.TrimSpace(c.AdminAllowedDomains) == "" {
-			errors = append(errors, "ADMIN_ALLOWED_DOMAINS is required in production")
-		}
-		if strings.TrimSpace(c.AdminBootstrapEmail) == "" {
-			errors = append(errors, "ADMIN_BOOTSTRAP_EMAIL is required in production")
-		}
-		if c.AdminBootstrapEmail != "" && !emailMatchesAllowedDomains(c.AdminBootstrapEmail, c.AdminAllowedDomains) {
-			errors = append(errors, "ADMIN_BOOTSTRAP_EMAIL must match ADMIN_ALLOWED_DOMAINS")
-		}
-		if c.AdminSessionSecret == "dev-admin-session-secret-change-me" {
-			errors = append(errors, "ADMIN_SESSION_SECRET must be changed in production")
-		}
 		if c.AdminDevLogin {
 			errors = append(errors, "ADMIN_DEV_LOGIN must be false in production")
 		}
-		if strings.TrimSpace(c.GoogleOAuthClientID) == "" {
-			errors = append(errors, "GOOGLE_OAUTH_CLIENT_ID is required in production")
-		}
-		if strings.TrimSpace(c.GoogleOAuthSecret) == "" {
-			errors = append(errors, "GOOGLE_OAUTH_CLIENT_SECRET is required in production")
+		if c.adminOAuthConfigured() {
+			if strings.TrimSpace(c.AdminAllowedDomains) == "" {
+				errors = append(errors, "ADMIN_ALLOWED_DOMAINS is required when Google OAuth admin login is configured")
+			}
+			if strings.TrimSpace(c.AdminBootstrapEmail) == "" {
+				errors = append(errors, "ADMIN_BOOTSTRAP_EMAIL is required when Google OAuth admin login is configured")
+			}
+			if c.AdminBootstrapEmail != "" && !emailMatchesAllowedDomains(c.AdminBootstrapEmail, c.AdminAllowedDomains) {
+				errors = append(errors, "ADMIN_BOOTSTRAP_EMAIL must match ADMIN_ALLOWED_DOMAINS")
+			}
+			if c.AdminSessionSecret == "dev-admin-session-secret-change-me" {
+				errors = append(errors, "ADMIN_SESSION_SECRET must be changed when Google OAuth admin login is configured in production")
+			}
+			if strings.TrimSpace(c.GoogleOAuthClientID) == "" {
+				errors = append(errors, "GOOGLE_OAUTH_CLIENT_ID is required when Google OAuth admin login is configured")
+			}
+			if strings.TrimSpace(c.GoogleOAuthSecret) == "" {
+				errors = append(errors, "GOOGLE_OAUTH_CLIENT_SECRET is required when Google OAuth admin login is configured")
+			}
 		}
 	}
 
@@ -231,6 +233,14 @@ func (c *Config) Validate() error {
 	}
 
 	return nil
+}
+
+func (c *Config) adminOAuthConfigured() bool {
+	return strings.TrimSpace(c.AdminAllowedDomains) != "" ||
+		strings.TrimSpace(c.AdminBootstrapEmail) != "" ||
+		strings.TrimSpace(c.GoogleOAuthClientID) != "" ||
+		strings.TrimSpace(c.GoogleOAuthSecret) != "" ||
+		strings.TrimSpace(c.GoogleOAuthRedirectURL) != ""
 }
 
 // join concatenates strings with a separator (simple helper to avoid importing strings).

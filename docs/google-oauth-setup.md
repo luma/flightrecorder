@@ -62,6 +62,8 @@ All later users must sign in with Google, match `ADMIN_ALLOWED_DOMAINS`, and acc
 
 `GOOGLE_OAUTH_REDIRECT_URL` is optional. If unset, the service derives it from `API_DOMAIN`.
 
+If the Google OAuth variables and admin domain settings are omitted in production, the service still starts, but the admin web UI has no enabled login method. This allows reporter ingestion to stay online while OAuth secrets are being provisioned. `ADMIN_DEV_LOGIN=true` is still rejected in production.
+
 ## Local Development
 
 The default local flow can use dev-login:

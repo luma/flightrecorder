@@ -25,13 +25,22 @@ var _ = Describe("Config.Validate()", func() {
 		Expect(cfg.Validate()).To(Succeed())
 	})
 
-	It("rejects missing ADMIN_ALLOWED_DOMAINS in production", func() {
+	It("allows production with admin OAuth disabled", func() {
+		cfg := env.Config{
+			Environment:        "production",
+			AdminDevLogin:      false,
+			AdminSessionSecret: "dev-admin-session-secret-change-me",
+		}
+		Expect(cfg.Validate()).To(Succeed())
+	})
+
+	It("rejects missing ADMIN_ALLOWED_DOMAINS when Google OAuth is configured in production", func() {
 		cfg := productionConfig()
 		cfg.AdminAllowedDomains = ""
 		Expect(cfg.Validate()).To(MatchError(ContainSubstring("ADMIN_ALLOWED_DOMAINS")))
 	})
 
-	It("rejects missing ADMIN_BOOTSTRAP_EMAIL in production", func() {
+	It("rejects missing ADMIN_BOOTSTRAP_EMAIL when Google OAuth is configured in production", func() {
 		cfg := productionConfig()
 		cfg.AdminBootstrapEmail = ""
 		Expect(cfg.Validate()).To(MatchError(ContainSubstring("ADMIN_BOOTSTRAP_EMAIL is required")))
@@ -43,7 +52,7 @@ var _ = Describe("Config.Validate()", func() {
 		Expect(cfg.Validate()).To(MatchError(ContainSubstring("must match ADMIN_ALLOWED_DOMAINS")))
 	})
 
-	It("rejects the default admin session secret in production", func() {
+	It("rejects the default admin session secret when Google OAuth is configured in production", func() {
 		cfg := productionConfig()
 		cfg.AdminSessionSecret = "dev-admin-session-secret-change-me"
 		Expect(cfg.Validate()).To(MatchError(ContainSubstring("ADMIN_SESSION_SECRET")))
@@ -55,7 +64,7 @@ var _ = Describe("Config.Validate()", func() {
 		Expect(cfg.Validate()).To(MatchError(ContainSubstring("ADMIN_DEV_LOGIN")))
 	})
 
-	It("rejects missing Google OAuth credentials in production", func() {
+	It("rejects missing Google OAuth credentials when Google OAuth is configured in production", func() {
 		cfg := productionConfig()
 		cfg.GoogleOAuthClientID = ""
 		cfg.GoogleOAuthSecret = ""
