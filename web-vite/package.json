@@ -21,12 +21,8 @@
     "tailwindcss": "^4.2.1",
     "typescript": "~5.9.3",
     "vite": "^7.3.1",
-    "vite-plugin-pwa": "^1.2.0",
     "vite-plugin-singlefile": "^2.3.2",
-    "vitest": "^4.1.0",
-    "workbox-core": "^7.4.0",
-    "workbox-precaching": "^7.4.0",
-    "workbox-routing": "^7.4.0"
+    "vitest": "^4.1.0"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.90.21",
