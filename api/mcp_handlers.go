@@ -316,7 +316,7 @@ func mcpTools() []map[string]any {
 		mcpTool("projects.list", "List projects available to this agent.", map[string]any{"type": "object", "properties": map[string]any{}}),
 		mcpTool("projects.get_settings", "Get a project's schema, funnels, report config, and settings.", projectKeySchema()),
 		mcpTool("projects.create", "Create a project. Requires all-projects access.", createProjectSchema()),
-		mcpTool("projects.update", "Update an existing project. Cannot create missing projects.", createProjectSchema()),
+		mcpTool("projects.update", "Update an existing project. Cannot create missing projects.", updateProjectSchema()),
 		mcpTool("metrics.summary", "Query summary metrics for a project and time range.", timeProjectSchema()),
 		mcpTool("funnels.query", "Query configured funnels for a project and time range.", timeProjectSchema()),
 		mcpTool("reports.list", "List feedback reports for a project.", map[string]any{
@@ -389,15 +389,136 @@ func timeProjectSchema() map[string]any {
 	}
 }
 
+// createProjectSchema requires the full project configuration shape so agents
+// create a complete, explicit project rather than one silently filled with
+// defaults. The underlying upsert replaces every config field, so leaving any
+// section implicit produces an incomplete project.
 func createProjectSchema() map[string]any {
 	return map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"project_id":      map[string]any{"type": "string"},
-			"display_name":    map[string]any{"type": "string"},
-			"validation_mode": map[string]any{"type": "string"},
+		"type":       "object",
+		"properties": projectConfigProperties(),
+		"required": []string{
+			"project_id",
+			"display_name",
+			"validation_mode",
+			"ingest_config",
+			"retention_config",
+			"map_config",
+			"report_config",
+			"event_groups",
+			"query_fields",
+			"funnels",
 		},
-		"required": []string{"project_id", "display_name"},
+	}
+}
+
+// updateProjectSchema targets an existing project. Only the identity fields are
+// required; callers may narrow the update to specific config sections.
+func updateProjectSchema() map[string]any {
+	return map[string]any{
+		"type":       "object",
+		"properties": projectConfigProperties(),
+		"required":   []string{"project_id", "display_name"},
+	}
+}
+
+func projectConfigProperties() map[string]any {
+	stringArray := map[string]any{"type": "array", "items": map[string]any{"type": "string"}}
+	return map[string]any{
+		"project_id":      map[string]any{"type": "string"},
+		"display_name":    map[string]any{"type": "string"},
+		"validation_mode": map[string]any{"type": "string"},
+		"ingest_config": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"max_events_per_batch":      map[string]any{"type": "integer"},
+				"accept_gzip":               map[string]any{"type": "boolean"},
+				"allow_unknown_event_types": map[string]any{"type": "boolean"},
+				"allow_screenshot_failures": map[string]any{"type": "boolean"},
+			},
+		},
+		"retention_config": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"event_days":      map[string]any{"type": "integer"},
+				"report_days":     map[string]any{"type": "integer"},
+				"access_log_days": map[string]any{"type": "integer"},
+			},
+		},
+		"map_config": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"spatial_enabled":     map[string]any{"type": "boolean"},
+				"zone_extent_m":       map[string]any{"type": "integer"},
+				"zone_heatmap_cell_m": map[string]any{"type": "integer"},
+			},
+		},
+		"report_config": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"statuses":           stringArray,
+				"labels":             stringArray,
+				"rate_limit_seconds": map[string]any{"type": "integer"},
+			},
+		},
+		"event_groups": map[string]any{
+			"type":                 "object",
+			"additionalProperties": stringArray,
+		},
+		"query_fields": map[string]any{
+			"type": "array",
+			"items": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"key":          map[string]any{"type": "string"},
+					"source":       map[string]any{"type": "string"},
+					"type":         map[string]any{"type": "string"},
+					"label":        map[string]any{"type": "string"},
+					"filterable":   map[string]any{"type": "boolean"},
+					"aggregations": stringArray,
+				},
+				"required": []string{"key", "source", "type"},
+			},
+		},
+		"funnels": map[string]any{
+			"type": "array",
+			"items": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"id":          map[string]any{"type": "string"},
+					"name":        map[string]any{"type": "string"},
+					"description": map[string]any{"type": "string"},
+					"entity":      map[string]any{"type": "string"},
+					"mode":        map[string]any{"type": "string"},
+					"enabled":     map[string]any{"type": "boolean"},
+					"steps": map[string]any{
+						"type": "array",
+						"items": map[string]any{
+							"type": "object",
+							"properties": map[string]any{
+								"id":    map[string]any{"type": "string"},
+								"label": map[string]any{"type": "string"},
+								"match": map[string]any{
+									"type": "object",
+									"properties": map[string]any{
+										"event_type":  map[string]any{"type": "string"},
+										"event_types": stringArray,
+										"field_key":   map[string]any{"type": "string"},
+										"field_value": map[string]any{},
+										"region_id":   map[string]any{"type": "string"},
+										"zone_id":     map[string]any{"type": "string"},
+									},
+								},
+								"after":          map[string]any{"type": "string"},
+								"within_seconds": map[string]any{"type": "integer"},
+							},
+							"required": []string{"id", "label", "match"},
+						},
+					},
+				},
+				"required": []string{"id", "name", "entity", "steps"},
+			},
+		},
 	}
 }
 
