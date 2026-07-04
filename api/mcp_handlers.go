@@ -150,6 +150,9 @@ func callMCPTool(ctx context.Context, adminSvc services.Admin, params mcpToolCal
 		if !session.AllProjects {
 			return nil, &mcpError{Code: -32003, Message: "all-projects access is required to create projects"}
 		}
+		if rpcErr := requireCompleteProjectConfig(params.Arguments); rpcErr != nil {
+			return nil, rpcErr
+		}
 		var req services.CreateProjectRequest
 		if err := decodeMCPArgs(params.Arguments, &req); err != nil {
 			return nil, invalidMCPArgs(err)
@@ -389,6 +392,22 @@ func timeProjectSchema() map[string]any {
 	}
 }
 
+// createProjectRequiredFields is the complete set of top-level fields that a
+// projects.create call must supply. It is shared between the advertised schema
+// and the handler-side validation so the two cannot drift.
+var createProjectRequiredFields = []string{
+	"project_id",
+	"display_name",
+	"validation_mode",
+	"ingest_config",
+	"retention_config",
+	"map_config",
+	"report_config",
+	"event_groups",
+	"query_fields",
+	"funnels",
+}
+
 // createProjectSchema requires the full project configuration shape so agents
 // create a complete, explicit project rather than one silently filled with
 // defaults. The underlying upsert replaces every config field, so leaving any
@@ -397,18 +416,7 @@ func createProjectSchema() map[string]any {
 	return map[string]any{
 		"type":       "object",
 		"properties": projectConfigProperties(),
-		"required": []string{
-			"project_id",
-			"display_name",
-			"validation_mode",
-			"ingest_config",
-			"retention_config",
-			"map_config",
-			"report_config",
-			"event_groups",
-			"query_fields",
-			"funnels",
-		},
+		"required":   createProjectRequiredFields,
 	}
 }
 
@@ -527,6 +535,32 @@ func decodeMCPArgs(raw json.RawMessage, out any) error {
 		raw = []byte("{}")
 	}
 	return json.Unmarshal(raw, out)
+}
+
+// requireCompleteProjectConfig enforces createProjectRequiredFields at the
+// handler layer. The advertised JSON schema is only advisory to clients, so a
+// non-conforming caller could otherwise create a project that silently falls
+// back to defaults. This rejects such calls before they reach the upsert.
+func requireCompleteProjectConfig(raw json.RawMessage) *mcpError {
+	var fields map[string]json.RawMessage
+	if len(raw) > 0 {
+		if err := json.Unmarshal(raw, &fields); err != nil {
+			return invalidMCPArgs(err)
+		}
+	}
+	var missing []string
+	for _, field := range createProjectRequiredFields {
+		if _, ok := fields[field]; !ok {
+			missing = append(missing, field)
+		}
+	}
+	if len(missing) > 0 {
+		return &mcpError{
+			Code:    -32602,
+			Message: "projects.create requires a complete project configuration; missing fields: " + strings.Join(missing, ", "),
+		}
+	}
+	return nil
 }
 
 func mcpTimeFilter(session services.AgentSession, raw json.RawMessage) (services.TimeProjectFilter, *mcpError) {

@@ -1,6 +1,13 @@
 package api
 
-import "testing"
+import (
+	"context"
+	"encoding/json"
+	"strings"
+	"testing"
+
+	"github.com/luma/flightrecorder/services"
+)
 
 // TestMCPProjectMutationToolsExposeFullSchema ensures projects.create and
 // projects.update advertise the complete services.CreateProjectRequest config
@@ -117,4 +124,98 @@ func mustMap(t *testing.T, v any, path string) map[string]any {
 		t.Fatalf("expected %s to be an object, got %T", path, v)
 	}
 	return m
+}
+
+func TestRequireCompleteProjectConfig(t *testing.T) {
+	fullConfig := `{
+		"project_id": "roadmap-to-ruin",
+		"display_name": "Roadmap to Ruin",
+		"validation_mode": "warn",
+		"ingest_config": {},
+		"retention_config": {},
+		"map_config": {"spatial_enabled": false},
+		"report_config": {},
+		"event_groups": {},
+		"query_fields": [],
+		"funnels": []
+	}`
+
+	if rpcErr := requireCompleteProjectConfig(json.RawMessage(fullConfig)); rpcErr != nil {
+		t.Fatalf("expected complete config to pass, got %+v", rpcErr)
+	}
+
+	rpcErr := requireCompleteProjectConfig(json.RawMessage(`{"project_id":"foo","display_name":"Foo"}`))
+	if rpcErr == nil {
+		t.Fatal("expected incomplete config to be rejected")
+	}
+	for _, field := range []string{"validation_mode", "ingest_config", "funnels"} {
+		if !strings.Contains(rpcErr.Message, field) {
+			t.Errorf("expected error to name missing field %q, got %q", field, rpcErr.Message)
+		}
+	}
+
+	if rpcErr := requireCompleteProjectConfig(nil); rpcErr == nil {
+		t.Fatal("expected empty arguments to be rejected")
+	}
+
+	if rpcErr := requireCompleteProjectConfig(json.RawMessage(`{not json}`)); rpcErr == nil {
+		t.Fatal("expected invalid JSON to be rejected")
+	}
+}
+
+// stubAdmin satisfies services.Admin but only implements the methods exercised
+// by these tests; any other call panics via the embedded nil interface.
+type stubAdmin struct {
+	services.Admin
+	createCalled bool
+}
+
+func (s *stubAdmin) CreateProject(_ context.Context, req services.CreateProjectRequest) (services.ProjectSettings, error) {
+	s.createCalled = true
+	return services.ProjectSettings{ProjectID: req.ProjectID}, nil
+}
+
+func TestMCPCreateProjectEnforcesCompleteConfig(t *testing.T) {
+	session := services.AgentSession{
+		AllProjects: true,
+		Scopes:      map[string]bool{services.MCPWriteScope: true},
+	}
+	ctx := services.ContextWithAgentSession(context.Background(), session)
+
+	// Incomplete config: rejected before reaching the service.
+	admin := &stubAdmin{}
+	_, rpcErr := callMCPTool(ctx, admin, mcpToolCallParams{
+		Name:      "projects.create",
+		Arguments: json.RawMessage(`{"project_id":"foo","display_name":"Foo"}`),
+	})
+	if rpcErr == nil {
+		t.Fatal("expected incomplete projects.create to be rejected")
+	}
+	if admin.createCalled {
+		t.Fatal("CreateProject must not be called for an incomplete config")
+	}
+
+	// Complete config: reaches the service.
+	admin = &stubAdmin{}
+	full := `{
+		"project_id": "roadmap-to-ruin",
+		"display_name": "Roadmap to Ruin",
+		"validation_mode": "warn",
+		"ingest_config": {},
+		"retention_config": {},
+		"map_config": {"spatial_enabled": false},
+		"report_config": {},
+		"event_groups": {},
+		"query_fields": [],
+		"funnels": []
+	}`
+	if _, rpcErr := callMCPTool(ctx, admin, mcpToolCallParams{
+		Name:      "projects.create",
+		Arguments: json.RawMessage(full),
+	}); rpcErr != nil {
+		t.Fatalf("expected complete projects.create to succeed, got %+v", rpcErr)
+	}
+	if !admin.createCalled {
+		t.Fatal("CreateProject should be called for a complete config")
+	}
 }
