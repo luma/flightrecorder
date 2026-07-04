@@ -22,6 +22,8 @@ The service currently includes:
 - Postgres-backed event, batch, token, bug report, and admin tables.
 - A Vite admin dashboard embedded into the Go binary and served by the API.
 - Admin auth for local development and admin API routes for review workflows.
+- Remote MCP agent access with browser OAuth consent and project-scoped
+  authorizations.
 - Project configuration contract and executable request fixtures.
 - Local filesystem screenshot storage, with R2-compatible object storage support
   behind the same storage interface.
@@ -51,6 +53,7 @@ The service currently includes:
 ├── godot/                   # reusable Godot client asset and E2E demo
 ├── docs/
 │   ├── api-contract.md
+│   ├── mcp.md
 │   └── project-config.md
 ├── docker-compose.yaml
 ├── examples/
@@ -168,10 +171,13 @@ The wizard has three sections:
   and bug-report rate limit.
 - `Schema`: event groups, query fields, and funnels.
 
-The schema section starts empty. Add only the event groups, query fields, and
-funnels that make sense for the game you are integrating. The Sursidus example
-configuration remains available in `examples/sursidus.project.json` as a
-reference, not as the default starting point.
+The schema section starts from a small report feedback baseline: the wizard
+includes the `bug_report` event group and report query fields for mood, mood
+label, and report source so the Reports tab works without extra setup. Add only
+the additional event groups, query fields, and funnels that make sense for the
+game you are integrating. The Sursidus example configuration remains available
+in `examples/sursidus.project.json` as a reference, not as the default starting
+point.
 
 ### 5. Create an Ingest Token
 
@@ -188,7 +194,26 @@ Export it in your shell:
 export FR_INGEST_TOKEN='<paste-token-here>'
 ```
 
-### 6. Submit Example Data
+Ingest tokens are prefixed with `fr_tel_`. MCP agent tokens use `fr_agnt_` and
+cannot be used for telemetry ingestion.
+
+### 6. Connect an MCP Agent
+
+flightrecorder exposes a remote MCP server at:
+
+```text
+http://localhost:8080/mcp
+```
+
+For deployed environments, replace the origin with your API domain, for example:
+
+```text
+https://telemetry.example.com/mcp
+```
+
+See [MCP Remote Agent Access](docs/mcp.md) for Claude and Codex setup examples.
+
+### 7. Submit Example Data
 
 Send the valid event batch fixture:
 

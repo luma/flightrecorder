@@ -100,6 +100,13 @@ func start(parentCtx context.Context, cmd *cli.Command, cfg *env.Config, log *sl
 		return err
 	}
 	adminService := services.NewAdminService(dbPool, screenshotStore, cfg.AdminAllowedDomains)
+	agentAuth := services.NewAgentAuthService(dbPool)
+	mcpOAuth := services.NewMCPOAuthService(services.MCPOAuthOptions{
+		DB:            dbPool,
+		Admin:         adminService,
+		BaseURL:       apiBaseURL(*cfg),
+		SessionSecret: cfg.AdminSessionSecret,
+	})
 	ingestService := services.NewIngestService(services.IngestOptions{
 		DB:                      dbPool,
 		MaxEventsPerBatch:       cfg.MaxEventsPerBatch,
@@ -124,6 +131,8 @@ func start(parentCtx context.Context, cmd *cli.Command, cfg *env.Config, log *sl
 		AdminAuth:          adminAuth,
 		AdminService:       adminService,
 		GoogleOAuth:        googleOAuth,
+		AgentAuth:          agentAuth,
+		MCPOAuth:           mcpOAuth,
 	})
 	if err != nil {
 		return fmt.Errorf("running API server: %w", err)

@@ -45,6 +45,22 @@ export default function Layout() {
                   <p className="truncate text-sm font-semibold text-on-surface">{user?.name || user?.email}</p>
                   <p className="truncate text-xs text-on-surface-variant">{user?.email}</p>
                 </div>
+                <nav className="mb-3 border-y border-outline-ghost py-2">
+                  <Link
+                    to="/users"
+                    onClick={() => setProfileOpen(false)}
+                    className="block rounded-md px-3 py-2 text-sm font-medium text-on-surface-variant transition-colors hover:bg-surface-container hover:text-on-surface"
+                  >
+                    Users
+                  </Link>
+                  <Link
+                    to="/agents"
+                    onClick={() => setProfileOpen(false)}
+                    className="block rounded-md px-3 py-2 text-sm font-medium text-on-surface-variant transition-colors hover:bg-surface-container hover:text-on-surface"
+                  >
+                    Agents
+                  </Link>
+                </nav>
                 <button type="button" onClick={logout} className="w-full btn-secondary text-left">
                   Logout
                 </button>

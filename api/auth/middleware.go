@@ -2,8 +2,6 @@ package auth
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"log/slog"
 	"strings"
 
@@ -36,7 +34,7 @@ func requireAuth(authSvc services.Auth, log *slog.Logger) app.HandlerFunc {
 		header := string(c.GetHeader("Authorization"))
 		if header != "" && strings.HasPrefix(header, "Bearer ") {
 			token := strings.TrimPrefix(header, "Bearer ")
-			if token != "" {
+			if token != "" && strings.HasPrefix(token, services.TelemetryTokenPrefix) {
 				hash := HashToken(token)
 				projectID, err := authSvc.ValidateAccessToken(ctx, hash)
 				if err == nil {
@@ -57,8 +55,32 @@ func requireAuth(authSvc services.Auth, log *slog.Logger) app.HandlerFunc {
 	}
 }
 
+// RequireMCPAgent enforces bearer authentication for remote MCP agents.
+func RequireMCPAgent(agentAuth services.AgentAuth, log *slog.Logger, resourceMetadataURL string) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		header := string(c.GetHeader("Authorization"))
+		if header != "" && strings.HasPrefix(header, "Bearer ") {
+			token := strings.TrimPrefix(header, "Bearer ")
+			if token != "" && strings.HasPrefix(token, services.AgentTokenPrefix) {
+				session, err := agentAuth.ValidateAgentToken(ctx, token)
+				if err == nil {
+					ctx = services.ContextWithAgentSession(ctx, session)
+					c.Next(ctx)
+					return
+				}
+				log.DebugContext(ctx, "agent bearer auth failed", slog.String("agent_auth_err", err.Error()))
+			}
+		}
+
+		if resourceMetadataURL != "" {
+			c.Header("WWW-Authenticate", `Bearer resource_metadata="`+resourceMetadataURL+`"`)
+		}
+		c.JSON(consts.StatusUnauthorized, map[string]string{"error": "agent authentication required"})
+		c.Abort()
+	}
+}
+
 // HashToken produces a SHA-256 hex digest of the raw token.
 func HashToken(token string) string {
-	h := sha256.Sum256([]byte(token))
-	return hex.EncodeToString(h[:])
+	return services.HashToken(token)
 }

@@ -653,6 +653,87 @@ func (q *Queries) AdminListActiveInvitations(ctx context.Context) ([]AdminListAc
 	return items, nil
 }
 
+const adminListAgentAuthorizations = `-- name: AdminListAgentAuthorizations :many
+SELECT
+    aa.id,
+    aa.client_id,
+    aa.client_name,
+    aa.created_by_admin_user_id,
+    creator.email AS created_by_email,
+    aa.all_projects,
+    aa.scopes,
+    aa.enabled,
+    aa.expires_at,
+    aa.activated_at,
+    aa.last_used_at,
+    aa.created_at,
+    aa.updated_at,
+    COALESCE(
+        (
+            SELECT jsonb_agg(p.project_key ORDER BY p.project_key)
+            FROM agent_authorization_projects aap
+            JOIN projects p ON p.id = aap.project_id
+            WHERE aap.agent_authorization_id = aa.id
+        ),
+        '[]'::jsonb
+    )::jsonb AS project_keys
+FROM agent_authorizations aa
+LEFT JOIN admin_users creator ON creator.id = aa.created_by_admin_user_id
+ORDER BY aa.created_at DESC
+`
+
+type AdminListAgentAuthorizationsRow struct {
+	ID                   uuid.UUID          `json:"id"`
+	ClientID             string             `json:"client_id"`
+	ClientName           string             `json:"client_name"`
+	CreatedByAdminUserID pgtype.UUID        `json:"created_by_admin_user_id"`
+	CreatedByEmail       pgtype.Text        `json:"created_by_email"`
+	AllProjects          bool               `json:"all_projects"`
+	Scopes               []string           `json:"scopes"`
+	Enabled              bool               `json:"enabled"`
+	ExpiresAt            time.Time          `json:"expires_at"`
+	ActivatedAt          pgtype.Timestamptz `json:"activated_at"`
+	LastUsedAt           pgtype.Timestamptz `json:"last_used_at"`
+	CreatedAt            time.Time          `json:"created_at"`
+	UpdatedAt            time.Time          `json:"updated_at"`
+	ProjectKeys          json.RawMessage    `json:"project_keys"`
+}
+
+func (q *Queries) AdminListAgentAuthorizations(ctx context.Context) ([]AdminListAgentAuthorizationsRow, error) {
+	rows, err := q.db.Query(ctx, adminListAgentAuthorizations)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AdminListAgentAuthorizationsRow{}
+	for rows.Next() {
+		var i AdminListAgentAuthorizationsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ClientID,
+			&i.ClientName,
+			&i.CreatedByAdminUserID,
+			&i.CreatedByEmail,
+			&i.AllProjects,
+			&i.Scopes,
+			&i.Enabled,
+			&i.ExpiresAt,
+			&i.ActivatedAt,
+			&i.LastUsedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ProjectKeys,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const adminListEvents = `-- name: AdminListEvents :many
 SELECT
     id,
@@ -1787,6 +1868,66 @@ func (q *Queries) AdminReportTrace(ctx context.Context, arg AdminReportTracePara
 	return items, nil
 }
 
+const adminSetAgentAuthorizationEnabled = `-- name: AdminSetAgentAuthorizationEnabled :one
+UPDATE agent_authorizations
+SET enabled = $2,
+    updated_at = now()
+WHERE id = $1
+RETURNING
+    id,
+    client_id,
+    client_name,
+    created_by_admin_user_id,
+    all_projects,
+    scopes,
+    enabled,
+    expires_at,
+    activated_at,
+    last_used_at,
+    created_at,
+    updated_at
+`
+
+type AdminSetAgentAuthorizationEnabledParams struct {
+	ID      uuid.UUID `json:"id"`
+	Enabled bool      `json:"enabled"`
+}
+
+type AdminSetAgentAuthorizationEnabledRow struct {
+	ID                   uuid.UUID          `json:"id"`
+	ClientID             string             `json:"client_id"`
+	ClientName           string             `json:"client_name"`
+	CreatedByAdminUserID pgtype.UUID        `json:"created_by_admin_user_id"`
+	AllProjects          bool               `json:"all_projects"`
+	Scopes               []string           `json:"scopes"`
+	Enabled              bool               `json:"enabled"`
+	ExpiresAt            time.Time          `json:"expires_at"`
+	ActivatedAt          pgtype.Timestamptz `json:"activated_at"`
+	LastUsedAt           pgtype.Timestamptz `json:"last_used_at"`
+	CreatedAt            time.Time          `json:"created_at"`
+	UpdatedAt            time.Time          `json:"updated_at"`
+}
+
+func (q *Queries) AdminSetAgentAuthorizationEnabled(ctx context.Context, arg AdminSetAgentAuthorizationEnabledParams) (AdminSetAgentAuthorizationEnabledRow, error) {
+	row := q.db.QueryRow(ctx, adminSetAgentAuthorizationEnabled, arg.ID, arg.Enabled)
+	var i AdminSetAgentAuthorizationEnabledRow
+	err := row.Scan(
+		&i.ID,
+		&i.ClientID,
+		&i.ClientName,
+		&i.CreatedByAdminUserID,
+		&i.AllProjects,
+		&i.Scopes,
+		&i.Enabled,
+		&i.ExpiresAt,
+		&i.ActivatedAt,
+		&i.LastUsedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const adminSetIngestTokenEnabled = `-- name: AdminSetIngestTokenEnabled :one
 UPDATE ingest_tokens
 SET enabled = $3
@@ -2245,4 +2386,482 @@ func (q *Queries) AdminZoneHeatmapByField(ctx context.Context, arg AdminZoneHeat
 		return nil, err
 	}
 	return items, nil
+}
+
+const mCPActivateAgentAuthorization = `-- name: MCPActivateAgentAuthorization :one
+UPDATE agent_authorizations
+SET token_hash = $2,
+    activated_at = now(),
+    updated_at = now()
+WHERE id = $1
+  AND token_hash IS NULL
+  AND enabled = true
+  AND expires_at > now()
+RETURNING
+    id,
+    client_id,
+    client_name,
+    created_by_admin_user_id,
+    all_projects,
+    scopes,
+    enabled,
+    expires_at,
+    activated_at,
+    last_used_at,
+    created_at,
+    updated_at
+`
+
+type MCPActivateAgentAuthorizationParams struct {
+	ID        uuid.UUID   `json:"id"`
+	TokenHash pgtype.Text `json:"token_hash"`
+}
+
+type MCPActivateAgentAuthorizationRow struct {
+	ID                   uuid.UUID          `json:"id"`
+	ClientID             string             `json:"client_id"`
+	ClientName           string             `json:"client_name"`
+	CreatedByAdminUserID pgtype.UUID        `json:"created_by_admin_user_id"`
+	AllProjects          bool               `json:"all_projects"`
+	Scopes               []string           `json:"scopes"`
+	Enabled              bool               `json:"enabled"`
+	ExpiresAt            time.Time          `json:"expires_at"`
+	ActivatedAt          pgtype.Timestamptz `json:"activated_at"`
+	LastUsedAt           pgtype.Timestamptz `json:"last_used_at"`
+	CreatedAt            time.Time          `json:"created_at"`
+	UpdatedAt            time.Time          `json:"updated_at"`
+}
+
+func (q *Queries) MCPActivateAgentAuthorization(ctx context.Context, arg MCPActivateAgentAuthorizationParams) (MCPActivateAgentAuthorizationRow, error) {
+	row := q.db.QueryRow(ctx, mCPActivateAgentAuthorization, arg.ID, arg.TokenHash)
+	var i MCPActivateAgentAuthorizationRow
+	err := row.Scan(
+		&i.ID,
+		&i.ClientID,
+		&i.ClientName,
+		&i.CreatedByAdminUserID,
+		&i.AllProjects,
+		&i.Scopes,
+		&i.Enabled,
+		&i.ExpiresAt,
+		&i.ActivatedAt,
+		&i.LastUsedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const mCPCleanupExpiredOAuthCodes = `-- name: MCPCleanupExpiredOAuthCodes :exec
+DELETE FROM mcp_oauth_codes
+WHERE expires_at < now()
+`
+
+func (q *Queries) MCPCleanupExpiredOAuthCodes(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, mCPCleanupExpiredOAuthCodes)
+	return err
+}
+
+const mCPCleanupExpiredOAuthState = `-- name: MCPCleanupExpiredOAuthState :exec
+DELETE FROM agent_authorizations aa
+WHERE aa.token_hash IS NULL
+  AND EXISTS (
+      SELECT 1
+      FROM mcp_oauth_codes code
+      WHERE code.agent_authorization_id = aa.id
+        AND code.expires_at < now()
+  )
+`
+
+func (q *Queries) MCPCleanupExpiredOAuthState(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, mCPCleanupExpiredOAuthState)
+	return err
+}
+
+const mCPConsumeOAuthCode = `-- name: MCPConsumeOAuthCode :one
+UPDATE mcp_oauth_codes
+SET consumed_at = now()
+WHERE code_hash = $1
+  AND client_id = $2
+  AND redirect_uri = $3
+  AND resource = $4
+  AND consumed_at IS NULL
+  AND expires_at > now()
+RETURNING
+    client_id,
+    redirect_uri,
+    code_challenge,
+    code_challenge_method,
+    resource,
+    scopes,
+    admin_user_id,
+    agent_authorization_id,
+    expires_at,
+    consumed_at,
+    created_at
+`
+
+type MCPConsumeOAuthCodeParams struct {
+	CodeHash    string `json:"code_hash"`
+	ClientID    string `json:"client_id"`
+	RedirectUri string `json:"redirect_uri"`
+	Resource    string `json:"resource"`
+}
+
+type MCPConsumeOAuthCodeRow struct {
+	ClientID             string             `json:"client_id"`
+	RedirectUri          string             `json:"redirect_uri"`
+	CodeChallenge        string             `json:"code_challenge"`
+	CodeChallengeMethod  string             `json:"code_challenge_method"`
+	Resource             string             `json:"resource"`
+	Scopes               []string           `json:"scopes"`
+	AdminUserID          uuid.UUID          `json:"admin_user_id"`
+	AgentAuthorizationID uuid.UUID          `json:"agent_authorization_id"`
+	ExpiresAt            time.Time          `json:"expires_at"`
+	ConsumedAt           pgtype.Timestamptz `json:"consumed_at"`
+	CreatedAt            time.Time          `json:"created_at"`
+}
+
+func (q *Queries) MCPConsumeOAuthCode(ctx context.Context, arg MCPConsumeOAuthCodeParams) (MCPConsumeOAuthCodeRow, error) {
+	row := q.db.QueryRow(ctx, mCPConsumeOAuthCode,
+		arg.CodeHash,
+		arg.ClientID,
+		arg.RedirectUri,
+		arg.Resource,
+	)
+	var i MCPConsumeOAuthCodeRow
+	err := row.Scan(
+		&i.ClientID,
+		&i.RedirectUri,
+		&i.CodeChallenge,
+		&i.CodeChallengeMethod,
+		&i.Resource,
+		&i.Scopes,
+		&i.AdminUserID,
+		&i.AgentAuthorizationID,
+		&i.ExpiresAt,
+		&i.ConsumedAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const mCPCreateAgentAuthorization = `-- name: MCPCreateAgentAuthorization :one
+INSERT INTO agent_authorizations (
+    client_id,
+    client_name,
+    created_by_admin_user_id,
+    all_projects,
+    scopes,
+    expires_at
+) VALUES (
+    $1, $2, $3, $4, $5, $6
+)
+RETURNING
+    id,
+    client_id,
+    client_name,
+    created_by_admin_user_id,
+    all_projects,
+    scopes,
+    enabled,
+    expires_at,
+    activated_at,
+    last_used_at,
+    created_at,
+    updated_at
+`
+
+type MCPCreateAgentAuthorizationParams struct {
+	ClientID             string      `json:"client_id"`
+	ClientName           string      `json:"client_name"`
+	CreatedByAdminUserID pgtype.UUID `json:"created_by_admin_user_id"`
+	AllProjects          bool        `json:"all_projects"`
+	Scopes               []string    `json:"scopes"`
+	ExpiresAt            time.Time   `json:"expires_at"`
+}
+
+type MCPCreateAgentAuthorizationRow struct {
+	ID                   uuid.UUID          `json:"id"`
+	ClientID             string             `json:"client_id"`
+	ClientName           string             `json:"client_name"`
+	CreatedByAdminUserID pgtype.UUID        `json:"created_by_admin_user_id"`
+	AllProjects          bool               `json:"all_projects"`
+	Scopes               []string           `json:"scopes"`
+	Enabled              bool               `json:"enabled"`
+	ExpiresAt            time.Time          `json:"expires_at"`
+	ActivatedAt          pgtype.Timestamptz `json:"activated_at"`
+	LastUsedAt           pgtype.Timestamptz `json:"last_used_at"`
+	CreatedAt            time.Time          `json:"created_at"`
+	UpdatedAt            time.Time          `json:"updated_at"`
+}
+
+func (q *Queries) MCPCreateAgentAuthorization(ctx context.Context, arg MCPCreateAgentAuthorizationParams) (MCPCreateAgentAuthorizationRow, error) {
+	row := q.db.QueryRow(ctx, mCPCreateAgentAuthorization,
+		arg.ClientID,
+		arg.ClientName,
+		arg.CreatedByAdminUserID,
+		arg.AllProjects,
+		arg.Scopes,
+		arg.ExpiresAt,
+	)
+	var i MCPCreateAgentAuthorizationRow
+	err := row.Scan(
+		&i.ID,
+		&i.ClientID,
+		&i.ClientName,
+		&i.CreatedByAdminUserID,
+		&i.AllProjects,
+		&i.Scopes,
+		&i.Enabled,
+		&i.ExpiresAt,
+		&i.ActivatedAt,
+		&i.LastUsedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const mCPCreateAgentAuthorizationProject = `-- name: MCPCreateAgentAuthorizationProject :exec
+INSERT INTO agent_authorization_projects (
+    agent_authorization_id,
+    project_id
+) VALUES (
+    $1, $2
+)
+`
+
+type MCPCreateAgentAuthorizationProjectParams struct {
+	AgentAuthorizationID uuid.UUID `json:"agent_authorization_id"`
+	ProjectID            uuid.UUID `json:"project_id"`
+}
+
+func (q *Queries) MCPCreateAgentAuthorizationProject(ctx context.Context, arg MCPCreateAgentAuthorizationProjectParams) error {
+	_, err := q.db.Exec(ctx, mCPCreateAgentAuthorizationProject, arg.AgentAuthorizationID, arg.ProjectID)
+	return err
+}
+
+const mCPCreateOAuthCode = `-- name: MCPCreateOAuthCode :exec
+INSERT INTO mcp_oauth_codes (
+    code_hash,
+    client_id,
+    redirect_uri,
+    code_challenge,
+    code_challenge_method,
+    resource,
+    scopes,
+    admin_user_id,
+    agent_authorization_id,
+    expires_at
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
+)
+`
+
+type MCPCreateOAuthCodeParams struct {
+	CodeHash             string    `json:"code_hash"`
+	ClientID             string    `json:"client_id"`
+	RedirectUri          string    `json:"redirect_uri"`
+	CodeChallenge        string    `json:"code_challenge"`
+	CodeChallengeMethod  string    `json:"code_challenge_method"`
+	Resource             string    `json:"resource"`
+	Scopes               []string  `json:"scopes"`
+	AdminUserID          uuid.UUID `json:"admin_user_id"`
+	AgentAuthorizationID uuid.UUID `json:"agent_authorization_id"`
+	ExpiresAt            time.Time `json:"expires_at"`
+}
+
+func (q *Queries) MCPCreateOAuthCode(ctx context.Context, arg MCPCreateOAuthCodeParams) error {
+	_, err := q.db.Exec(ctx, mCPCreateOAuthCode,
+		arg.CodeHash,
+		arg.ClientID,
+		arg.RedirectUri,
+		arg.CodeChallenge,
+		arg.CodeChallengeMethod,
+		arg.Resource,
+		arg.Scopes,
+		arg.AdminUserID,
+		arg.AgentAuthorizationID,
+		arg.ExpiresAt,
+	)
+	return err
+}
+
+const mCPGetOAuthClient = `-- name: MCPGetOAuthClient :one
+SELECT
+    client_id,
+    client_name,
+    redirect_uris,
+    client_uri,
+    logo_uri,
+    created_at,
+    updated_at
+FROM mcp_oauth_clients
+WHERE client_id = $1
+`
+
+func (q *Queries) MCPGetOAuthClient(ctx context.Context, clientID string) (McpOauthClient, error) {
+	row := q.db.QueryRow(ctx, mCPGetOAuthClient, clientID)
+	var i McpOauthClient
+	err := row.Scan(
+		&i.ClientID,
+		&i.ClientName,
+		&i.RedirectUris,
+		&i.ClientUri,
+		&i.LogoUri,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const mCPListAgentAuthorizationProjects = `-- name: MCPListAgentAuthorizationProjects :many
+SELECT
+    p.id,
+    p.project_key
+FROM agent_authorization_projects aap
+JOIN projects p ON p.id = aap.project_id
+WHERE aap.agent_authorization_id = $1
+ORDER BY p.project_key ASC
+`
+
+type MCPListAgentAuthorizationProjectsRow struct {
+	ID         uuid.UUID `json:"id"`
+	ProjectKey string    `json:"project_key"`
+}
+
+func (q *Queries) MCPListAgentAuthorizationProjects(ctx context.Context, agentAuthorizationID uuid.UUID) ([]MCPListAgentAuthorizationProjectsRow, error) {
+	rows, err := q.db.Query(ctx, mCPListAgentAuthorizationProjects, agentAuthorizationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []MCPListAgentAuthorizationProjectsRow{}
+	for rows.Next() {
+		var i MCPListAgentAuthorizationProjectsRow
+		if err := rows.Scan(&i.ID, &i.ProjectKey); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const mCPUpsertOAuthClient = `-- name: MCPUpsertOAuthClient :one
+INSERT INTO mcp_oauth_clients (
+    client_id,
+    client_name,
+    redirect_uris,
+    client_uri,
+    logo_uri
+) VALUES (
+    $1, $2, $3, $4, $5
+)
+ON CONFLICT (client_id) DO UPDATE
+SET client_name = EXCLUDED.client_name,
+    redirect_uris = EXCLUDED.redirect_uris,
+    client_uri = EXCLUDED.client_uri,
+    logo_uri = EXCLUDED.logo_uri,
+    updated_at = now()
+RETURNING
+    client_id,
+    client_name,
+    redirect_uris,
+    client_uri,
+    logo_uri,
+    created_at,
+    updated_at
+`
+
+type MCPUpsertOAuthClientParams struct {
+	ClientID     string   `json:"client_id"`
+	ClientName   string   `json:"client_name"`
+	RedirectUris []string `json:"redirect_uris"`
+	ClientUri    string   `json:"client_uri"`
+	LogoUri      string   `json:"logo_uri"`
+}
+
+func (q *Queries) MCPUpsertOAuthClient(ctx context.Context, arg MCPUpsertOAuthClientParams) (McpOauthClient, error) {
+	row := q.db.QueryRow(ctx, mCPUpsertOAuthClient,
+		arg.ClientID,
+		arg.ClientName,
+		arg.RedirectUris,
+		arg.ClientUri,
+		arg.LogoUri,
+	)
+	var i McpOauthClient
+	err := row.Scan(
+		&i.ClientID,
+		&i.ClientName,
+		&i.RedirectUris,
+		&i.ClientUri,
+		&i.LogoUri,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const mCPValidateAgentToken = `-- name: MCPValidateAgentToken :one
+UPDATE agent_authorizations aa
+SET last_used_at = now()
+FROM admin_users au
+WHERE aa.token_hash = $1
+  AND aa.enabled = true
+  AND aa.expires_at > now()
+  AND aa.created_by_admin_user_id IS NOT NULL
+  AND au.id = aa.created_by_admin_user_id
+  AND au.enabled = true
+RETURNING
+    aa.id,
+    aa.client_id,
+    aa.client_name,
+    aa.created_by_admin_user_id,
+    aa.all_projects,
+    aa.scopes,
+    aa.enabled,
+    aa.expires_at,
+    aa.activated_at,
+    aa.last_used_at,
+    aa.created_at,
+    aa.updated_at
+`
+
+type MCPValidateAgentTokenRow struct {
+	ID                   uuid.UUID          `json:"id"`
+	ClientID             string             `json:"client_id"`
+	ClientName           string             `json:"client_name"`
+	CreatedByAdminUserID pgtype.UUID        `json:"created_by_admin_user_id"`
+	AllProjects          bool               `json:"all_projects"`
+	Scopes               []string           `json:"scopes"`
+	Enabled              bool               `json:"enabled"`
+	ExpiresAt            time.Time          `json:"expires_at"`
+	ActivatedAt          pgtype.Timestamptz `json:"activated_at"`
+	LastUsedAt           pgtype.Timestamptz `json:"last_used_at"`
+	CreatedAt            time.Time          `json:"created_at"`
+	UpdatedAt            time.Time          `json:"updated_at"`
+}
+
+func (q *Queries) MCPValidateAgentToken(ctx context.Context, tokenHash pgtype.Text) (MCPValidateAgentTokenRow, error) {
+	row := q.db.QueryRow(ctx, mCPValidateAgentToken, tokenHash)
+	var i MCPValidateAgentTokenRow
+	err := row.Scan(
+		&i.ID,
+		&i.ClientID,
+		&i.ClientName,
+		&i.CreatedByAdminUserID,
+		&i.AllProjects,
+		&i.Scopes,
+		&i.Enabled,
+		&i.ExpiresAt,
+		&i.ActivatedAt,
+		&i.LastUsedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }

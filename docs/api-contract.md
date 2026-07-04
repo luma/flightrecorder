@@ -19,6 +19,7 @@ fixture project, not because the collector requires that ID.
 - Ingestion auth uses project-scoped bearer tokens.
 - Admin auth uses OAuth-backed browser sessions, a configured email-domain
   gate, and invitation-managed users.
+- MCP agent auth uses separate OAuth-issued bearer tokens.
 - Server timestamps are ISO 8601 UTC strings.
 
 ## Ingestion Authentication
@@ -31,7 +32,15 @@ Content-Type: application/json
 Accept: application/json
 ```
 
-Tokens are project scoped. The backend stores only token hashes.
+Tokens are project scoped and prefixed with `fr_tel_`. The backend stores only
+token hashes. MCP agent tokens are prefixed with `fr_agnt_` and are rejected by
+ingestion routes.
+
+## MCP Agent Authentication
+
+Remote agents use the MCP endpoint at `/mcp`, OAuth authorization code + PKCE,
+and project-scoped `fr_agnt_` bearer tokens. See [MCP Remote Agent
+Access](mcp.md).
 
 ## `POST /v1/events`
 

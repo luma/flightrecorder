@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../api";
 import LogoMark from "../components/LogoMark";
@@ -8,6 +8,10 @@ export default function Login() {
   const [email, setEmail] = useState("admin@example.com");
   const [error, setError] = useState("");
   const navigate = useNavigate();
+  const location = useLocation();
+  const from = (location.state as { from?: Location } | null)?.from;
+  const queryReturnPath = new URLSearchParams(location.search).get("return_path");
+  const returnPath = queryReturnPath || (from ? `${from.pathname}${from.search}` : "/");
   const authConfig = useQuery({
     queryKey: ["auth-config"],
     queryFn: api.authConfig,
@@ -19,7 +23,7 @@ export default function Login() {
     setError("");
     try {
       await api.devLogin(email);
-      navigate("/", { replace: true });
+      navigate(returnPath, { replace: true });
       window.location.reload();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
@@ -40,7 +44,7 @@ export default function Login() {
         {authConfig.isLoading ? <p className="text-center text-sm text-on-surface-variant">Loading...</p> : null}
 
         {config?.google_enabled ? (
-          <a href={api.googleLoginURL()} className="block w-full rounded-md bg-primary px-4 py-2 text-center font-semibold text-on-primary">
+          <a href={api.googleLoginURL(returnPath)} className="block w-full rounded-md bg-primary px-4 py-2 text-center font-semibold text-on-primary">
             Continue with Google
           </a>
         ) : null}

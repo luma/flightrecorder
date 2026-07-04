@@ -6,6 +6,9 @@ import Dashboard from "./pages/Dashboard";
 import Login from "./pages/Login";
 import AcceptInvite from "./pages/AcceptInvite";
 import LoginError from "./pages/LoginError";
+import MCPConsent from "./pages/MCPConsent";
+import UsersPage from "./pages/UsersPage";
+import AgentsPage from "./pages/AgentsPage";
 
 export default function App() {
   return (
@@ -14,6 +17,14 @@ export default function App() {
       <Route path="/accept-invite" element={<AcceptInvite />} />
       <Route path="/login-error" element={<LoginError />} />
       <Route
+        path="/mcp/consent"
+        element={
+          <RequireAuth>
+            <MCPConsent />
+          </RequireAuth>
+        }
+      />
+      <Route
         element={
           <RequireAuth>
             <Layout />
@@ -21,6 +32,8 @@ export default function App() {
         }
       >
         <Route path="/" element={<Dashboard />} />
+        <Route path="/users" element={<UsersPage />} />
+        <Route path="/agents" element={<AgentsPage />} />
       </Route>
     </Routes>
   );

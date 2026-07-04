@@ -9,7 +9,11 @@ export interface User {
 }
 
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${ADMIN_API_BASE}${path}`, {
+  return fetchJSON<T>(`${ADMIN_API_BASE}${path}`, options);
+}
+
+async function fetchJSON<T>(path: string, options?: RequestInit): Promise<T> {
+  const res = await fetch(path, {
     ...options,
     credentials: "include",
     headers: {
@@ -250,6 +254,28 @@ export interface CreateAdminInvitationResponse {
   token: string;
 }
 
+export interface AgentAuthorizationSummary {
+  id: string;
+  client_id: string;
+  client_name: string;
+  created_by_admin_user_id?: string;
+  created_by_email?: string;
+  all_projects: boolean;
+  project_keys: string[];
+  scopes: string[];
+  enabled: boolean;
+  expires_at: string;
+  activated_at?: string;
+  last_used_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MCPConsentDetails {
+  client_name: string;
+  projects: ProjectSummary[];
+}
+
 export interface SettingsResponse {
   project: {
     project_id: string;
@@ -293,7 +319,7 @@ export interface CreateIngestTokenResponse {
 }
 
 export const api = {
-  googleLoginURL: () => `${ADMIN_API_BASE}/auth/google/start`,
+  googleLoginURL: (returnPath?: string) => `${ADMIN_API_BASE}/auth/google/start${queryString({ return_path: returnPath })}`,
   authConfig: () => apiFetch<AuthConfig>("/auth/config"),
   me: () => apiFetch<{ user: User }>("/auth/me").then((resp) => resp.user),
   devLogin: (email: string) =>
@@ -376,5 +402,18 @@ export const api = {
   deleteAdminInvitation: (invitationID: string) =>
     apiFetch<AdminInvitationSummary>(`/invitations/${encodeURIComponent(invitationID)}`, {
       method: "DELETE",
+    }),
+  agentAuthorizations: () => apiFetch<{ authorizations: AgentAuthorizationSummary[] }>("/agent-authorizations"),
+  setAgentAuthorizationEnabled: (authorizationID: string, enabled: boolean) =>
+    apiFetch<AgentAuthorizationSummary>(`/agent-authorizations/${encodeURIComponent(authorizationID)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ enabled }),
+    }),
+  mcpConsentDetails: (request: string) =>
+    fetchJSON<MCPConsentDetails>(`/api/mcp/oauth/consent${queryString({ request })}`),
+  confirmMCPConsent: (request: string, body: { all_projects: boolean; project_keys: string[] }) =>
+    fetchJSON<{ redirect_uri: string }>(`/api/mcp/oauth/consent${queryString({ request })}`, {
+      method: "POST",
+      body: JSON.stringify(body),
     }),
 };

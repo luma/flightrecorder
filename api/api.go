@@ -45,6 +45,8 @@ type Options struct {
 	AdminAuth     services.AdminAuth
 	AdminService  services.Admin
 	GoogleOAuth   services.GoogleOAuth
+	AgentAuth     services.AgentAuth
+	MCPOAuth      services.MCPOAuth
 }
 
 func (o *Options) Validate() error {
@@ -71,6 +73,12 @@ func (o *Options) Validate() error {
 	}
 	if o.GoogleOAuth == nil {
 		errs = append(errs, "GoogleOAuth is required")
+	}
+	if o.AgentAuth == nil {
+		errs = append(errs, "AgentAuth is required")
+	}
+	if o.MCPOAuth == nil {
+		errs = append(errs, "MCPOAuth is required")
 	}
 
 	if len(errs) > 0 {
@@ -143,6 +151,8 @@ func Run(opts Options) error {
 
 	admin := h.Group("/api/admin/v1")
 	registerAdminRoutes(admin, opts.AdminAuth, opts.AdminService, opts.GoogleOAuth, log, auth.SecureCookie(opts.APIBaseURL))
+
+	registerMCPRoutes(h, opts.AdminAuth, opts.AdminService, opts.AgentAuth, opts.MCPOAuth, log, auth.SecureCookie(opts.APIBaseURL), opts.APIBaseURL)
 
 	// Serve embedded SPA assets. Static files (JS, CSS) are served directly;
 	// all other paths fall back to index.html for client-side routing.

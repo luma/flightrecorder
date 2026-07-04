@@ -26,6 +26,7 @@ type Querier interface {
 	AdminGetUserByID(ctx context.Context, id uuid.UUID) (AdminGetUserByIDRow, error)
 	AdminGetUserBySubject(ctx context.Context, oauthSubject pgtype.Text) (AdminGetUserBySubjectRow, error)
 	AdminListActiveInvitations(ctx context.Context) ([]AdminListActiveInvitationsRow, error)
+	AdminListAgentAuthorizations(ctx context.Context) ([]AdminListAgentAuthorizationsRow, error)
 	AdminListEvents(ctx context.Context, arg AdminListEventsParams) ([]AdminListEventsRow, error)
 	AdminListEventsByField(ctx context.Context, arg AdminListEventsByFieldParams) ([]AdminListEventsByFieldRow, error)
 	AdminListIngestTokens(ctx context.Context, projectID uuid.UUID) ([]AdminListIngestTokensRow, error)
@@ -40,6 +41,7 @@ type Querier interface {
 	AdminRegionHeatmap(ctx context.Context, arg AdminRegionHeatmapParams) ([]AdminRegionHeatmapRow, error)
 	AdminRegionHeatmapByField(ctx context.Context, arg AdminRegionHeatmapByFieldParams) ([]AdminRegionHeatmapByFieldRow, error)
 	AdminReportTrace(ctx context.Context, arg AdminReportTraceParams) ([]AdminReportTraceRow, error)
+	AdminSetAgentAuthorizationEnabled(ctx context.Context, arg AdminSetAgentAuthorizationEnabledParams) (AdminSetAgentAuthorizationEnabledRow, error)
 	AdminSetIngestTokenEnabled(ctx context.Context, arg AdminSetIngestTokenEnabledParams) (AdminSetIngestTokenEnabledRow, error)
 	AdminSetUserEnabled(ctx context.Context, arg AdminSetUserEnabledParams) (AdminSetUserEnabledRow, error)
 	AdminSummary(ctx context.Context, arg AdminSummaryParams) (AdminSummaryRow, error)
@@ -55,6 +57,17 @@ type Querier interface {
 	GetBatchByProjectAndBatchID(ctx context.Context, arg GetBatchByProjectAndBatchIDParams) (GetBatchByProjectAndBatchIDRow, error)
 	GetProjectByKey(ctx context.Context, projectKey string) (GetProjectByKeyRow, error)
 	GetProjectIDByTokenHash(ctx context.Context, tokenHash string) (uuid.UUID, error)
+	MCPActivateAgentAuthorization(ctx context.Context, arg MCPActivateAgentAuthorizationParams) (MCPActivateAgentAuthorizationRow, error)
+	MCPCleanupExpiredOAuthCodes(ctx context.Context) error
+	MCPCleanupExpiredOAuthState(ctx context.Context) error
+	MCPConsumeOAuthCode(ctx context.Context, arg MCPConsumeOAuthCodeParams) (MCPConsumeOAuthCodeRow, error)
+	MCPCreateAgentAuthorization(ctx context.Context, arg MCPCreateAgentAuthorizationParams) (MCPCreateAgentAuthorizationRow, error)
+	MCPCreateAgentAuthorizationProject(ctx context.Context, arg MCPCreateAgentAuthorizationProjectParams) error
+	MCPCreateOAuthCode(ctx context.Context, arg MCPCreateOAuthCodeParams) error
+	MCPGetOAuthClient(ctx context.Context, clientID string) (McpOauthClient, error)
+	MCPListAgentAuthorizationProjects(ctx context.Context, agentAuthorizationID uuid.UUID) ([]MCPListAgentAuthorizationProjectsRow, error)
+	MCPUpsertOAuthClient(ctx context.Context, arg MCPUpsertOAuthClientParams) (McpOauthClient, error)
+	MCPValidateAgentToken(ctx context.Context, tokenHash pgtype.Text) (MCPValidateAgentTokenRow, error)
 }
 
 var _ Querier = (*Queries)(nil)

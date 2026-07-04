@@ -657,6 +657,231 @@ RETURNING
     deleted_at,
     created_at;
 
+-- name: MCPUpsertOAuthClient :one
+INSERT INTO mcp_oauth_clients (
+    client_id,
+    client_name,
+    redirect_uris,
+    client_uri,
+    logo_uri
+) VALUES (
+    $1, $2, $3, $4, $5
+)
+ON CONFLICT (client_id) DO UPDATE
+SET client_name = EXCLUDED.client_name,
+    redirect_uris = EXCLUDED.redirect_uris,
+    client_uri = EXCLUDED.client_uri,
+    logo_uri = EXCLUDED.logo_uri,
+    updated_at = now()
+RETURNING
+    client_id,
+    client_name,
+    redirect_uris,
+    client_uri,
+    logo_uri,
+    created_at,
+    updated_at;
+
+-- name: MCPGetOAuthClient :one
+SELECT
+    client_id,
+    client_name,
+    redirect_uris,
+    client_uri,
+    logo_uri,
+    created_at,
+    updated_at
+FROM mcp_oauth_clients
+WHERE client_id = $1;
+
+-- name: MCPCreateAgentAuthorization :one
+INSERT INTO agent_authorizations (
+    client_id,
+    client_name,
+    created_by_admin_user_id,
+    all_projects,
+    scopes,
+    expires_at
+) VALUES (
+    $1, $2, $3, $4, $5, $6
+)
+RETURNING
+    id,
+    client_id,
+    client_name,
+    created_by_admin_user_id,
+    all_projects,
+    scopes,
+    enabled,
+    expires_at,
+    activated_at,
+    last_used_at,
+    created_at,
+    updated_at;
+
+-- name: MCPCreateAgentAuthorizationProject :exec
+INSERT INTO agent_authorization_projects (
+    agent_authorization_id,
+    project_id
+) VALUES (
+    $1, $2
+);
+
+-- name: MCPCreateOAuthCode :exec
+INSERT INTO mcp_oauth_codes (
+    code_hash,
+    client_id,
+    redirect_uri,
+    code_challenge,
+    code_challenge_method,
+    resource,
+    scopes,
+    admin_user_id,
+    agent_authorization_id,
+    expires_at
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
+);
+
+-- name: MCPConsumeOAuthCode :one
+UPDATE mcp_oauth_codes
+SET consumed_at = now()
+WHERE code_hash = $1
+  AND client_id = $2
+  AND redirect_uri = $3
+  AND resource = $4
+  AND consumed_at IS NULL
+  AND expires_at > now()
+RETURNING
+    client_id,
+    redirect_uri,
+    code_challenge,
+    code_challenge_method,
+    resource,
+    scopes,
+    admin_user_id,
+    agent_authorization_id,
+    expires_at,
+    consumed_at,
+    created_at;
+
+-- name: MCPActivateAgentAuthorization :one
+UPDATE agent_authorizations
+SET token_hash = $2,
+    activated_at = now(),
+    updated_at = now()
+WHERE id = $1
+  AND token_hash IS NULL
+  AND enabled = true
+  AND expires_at > now()
+RETURNING
+    id,
+    client_id,
+    client_name,
+    created_by_admin_user_id,
+    all_projects,
+    scopes,
+    enabled,
+    expires_at,
+    activated_at,
+    last_used_at,
+    created_at,
+    updated_at;
+
+-- name: MCPValidateAgentToken :one
+UPDATE agent_authorizations aa
+SET last_used_at = now()
+FROM admin_users au
+WHERE aa.token_hash = $1
+  AND aa.enabled = true
+  AND aa.expires_at > now()
+  AND aa.created_by_admin_user_id IS NOT NULL
+  AND au.id = aa.created_by_admin_user_id
+  AND au.enabled = true
+RETURNING
+    aa.id,
+    aa.client_id,
+    aa.client_name,
+    aa.created_by_admin_user_id,
+    aa.all_projects,
+    aa.scopes,
+    aa.enabled,
+    aa.expires_at,
+    aa.activated_at,
+    aa.last_used_at,
+    aa.created_at,
+    aa.updated_at;
+
+-- name: MCPListAgentAuthorizationProjects :many
+SELECT
+    p.id,
+    p.project_key
+FROM agent_authorization_projects aap
+JOIN projects p ON p.id = aap.project_id
+WHERE aap.agent_authorization_id = $1
+ORDER BY p.project_key ASC;
+
+-- name: AdminListAgentAuthorizations :many
+SELECT
+    aa.id,
+    aa.client_id,
+    aa.client_name,
+    aa.created_by_admin_user_id,
+    creator.email AS created_by_email,
+    aa.all_projects,
+    aa.scopes,
+    aa.enabled,
+    aa.expires_at,
+    aa.activated_at,
+    aa.last_used_at,
+    aa.created_at,
+    aa.updated_at,
+    COALESCE(
+        (
+            SELECT jsonb_agg(p.project_key ORDER BY p.project_key)
+            FROM agent_authorization_projects aap
+            JOIN projects p ON p.id = aap.project_id
+            WHERE aap.agent_authorization_id = aa.id
+        ),
+        '[]'::jsonb
+    )::jsonb AS project_keys
+FROM agent_authorizations aa
+LEFT JOIN admin_users creator ON creator.id = aa.created_by_admin_user_id
+ORDER BY aa.created_at DESC;
+
+-- name: AdminSetAgentAuthorizationEnabled :one
+UPDATE agent_authorizations
+SET enabled = $2,
+    updated_at = now()
+WHERE id = $1
+RETURNING
+    id,
+    client_id,
+    client_name,
+    created_by_admin_user_id,
+    all_projects,
+    scopes,
+    enabled,
+    expires_at,
+    activated_at,
+    last_used_at,
+    created_at,
+    updated_at;
+
+-- name: MCPCleanupExpiredOAuthState :exec
+DELETE FROM agent_authorizations aa
+WHERE aa.token_hash IS NULL
+  AND EXISTS (
+      SELECT 1
+      FROM mcp_oauth_codes code
+      WHERE code.agent_authorization_id = aa.id
+        AND code.expires_at < now()
+  );
+
+-- name: MCPCleanupExpiredOAuthCodes :exec
+DELETE FROM mcp_oauth_codes
+WHERE expires_at < now();
+
 -- name: AdminListActiveInvitations :many
 SELECT
     i.id,

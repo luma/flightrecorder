@@ -51,6 +51,8 @@ func registerAdminRoutes(adminGroup *route.RouterGroup, adminAuth services.Admin
 	protected.GET("/invitations", makeAdminInvitations(adminSvc))
 	protected.POST("/invitations", makeAdminCreateInvitation(adminSvc))
 	protected.DELETE("/invitations/:invitation_id", makeAdminDeleteInvitation(adminSvc))
+	protected.GET("/agent-authorizations", makeAdminAgentAuthorizations(adminSvc))
+	protected.PATCH("/agent-authorizations/:authorization_id", makeAdminSetAgentAuthorizationEnabled(adminSvc))
 }
 
 func makeAdminAuthConfig(adminAuth services.AdminAuth) app.HandlerFunc {
@@ -530,6 +532,36 @@ func makeAdminDeleteInvitation(adminSvc services.Admin) app.HandlerFunc {
 			return
 		}
 		c.JSON(consts.StatusOK, invitation)
+	}
+}
+
+func makeAdminAgentAuthorizations(adminSvc services.Admin) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		authorizations, err := adminSvc.ListAgentAuthorizations(ctx)
+		if err != nil {
+			writeServiceError(c, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"authorizations": authorizations})
+	}
+}
+
+func makeAdminSetAgentAuthorizationEnabled(adminSvc services.Admin) app.HandlerFunc {
+	type request struct {
+		Enabled bool `json:"enabled"`
+	}
+	return func(ctx context.Context, c *app.RequestContext) {
+		var req request
+		if err := decodeJSONBody(c, &req); err != nil {
+			writeServiceError(c, fmt.Errorf("%w: %v", services.ErrBadRequest, err))
+			return
+		}
+		authorization, err := adminSvc.SetAgentAuthorizationEnabled(ctx, c.Param("authorization_id"), req.Enabled)
+		if err != nil {
+			writeServiceError(c, err)
+			return
+		}
+		c.JSON(consts.StatusOK, authorization)
 	}
 }
 

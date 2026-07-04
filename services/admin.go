@@ -3,9 +3,7 @@ package services
 import (
 	"context"
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -24,6 +22,7 @@ import (
 type Admin interface {
 	ListProjects(ctx context.Context) ([]ProjectSummary, error)
 	CreateProject(ctx context.Context, req CreateProjectRequest) (ProjectSettings, error)
+	UpdateProject(ctx context.Context, req CreateProjectRequest) (ProjectSettings, error)
 	Summary(ctx context.Context, filter TimeProjectFilter) (SummaryResponse, error)
 	ListEvents(ctx context.Context, filter EventListFilter) ([]EventSummary, error)
 	PlayerTrace(ctx context.Context, projectKey string, playerID string, limit int32) ([]TraceEvent, error)
@@ -43,7 +42,14 @@ type Admin interface {
 	ListAdminInvitations(ctx context.Context) ([]AdminInvitationSummary, error)
 	CreateAdminInvitation(ctx context.Context, req CreateAdminInvitationRequest) (CreateAdminInvitationResponse, error)
 	DeleteAdminInvitation(ctx context.Context, invitationID string) (AdminInvitationSummary, error)
+	ListAgentAuthorizations(ctx context.Context) ([]AgentAuthorizationSummary, error)
+	SetAgentAuthorizationEnabled(ctx context.Context, authorizationID string, enabled bool) (AgentAuthorizationSummary, error)
 }
+
+const (
+	TelemetryTokenPrefix = "fr_tel_"
+	AgentTokenPrefix     = "fr_agnt_"
+)
 
 type TimeProjectFilter struct {
 	ProjectID string
@@ -396,6 +402,23 @@ type CreateAdminInvitationResponse struct {
 	Token      string                 `json:"token"`
 }
 
+type AgentAuthorizationSummary struct {
+	ID                   string   `json:"id"`
+	ClientID             string   `json:"client_id"`
+	ClientName           string   `json:"client_name"`
+	CreatedByAdminUserID string   `json:"created_by_admin_user_id,omitempty"`
+	CreatedByEmail       string   `json:"created_by_email,omitempty"`
+	AllProjects          bool     `json:"all_projects"`
+	ProjectKeys          []string `json:"project_keys"`
+	Scopes               []string `json:"scopes"`
+	Enabled              bool     `json:"enabled"`
+	ExpiresAt            string   `json:"expires_at"`
+	ActivatedAt          string   `json:"activated_at,omitempty"`
+	LastUsedAt           string   `json:"last_used_at,omitempty"`
+	CreatedAt            string   `json:"created_at"`
+	UpdatedAt            string   `json:"updated_at"`
+}
+
 type adminService struct {
 	queries         *dbq.Queries
 	pool            db.Pool
@@ -435,6 +458,21 @@ func (s *adminService) ListProjects(ctx context.Context) ([]ProjectSummary, erro
 }
 
 func (s *adminService) CreateProject(ctx context.Context, req CreateProjectRequest) (ProjectSettings, error) {
+	return s.upsertProject(ctx, req)
+}
+
+func (s *adminService) UpdateProject(ctx context.Context, req CreateProjectRequest) (ProjectSettings, error) {
+	projectKey := strings.TrimSpace(req.ProjectID)
+	if projectKey == "" {
+		return ProjectSettings{}, fmt.Errorf("%w: project_id is required", ErrBadRequest)
+	}
+	if _, err := s.loadProject(ctx, projectKey); err != nil {
+		return ProjectSettings{}, err
+	}
+	return s.upsertProject(ctx, req)
+}
+
+func (s *adminService) upsertProject(ctx context.Context, req CreateProjectRequest) (ProjectSettings, error) {
 	params, err := createProjectParams(req)
 	if err != nil {
 		return ProjectSettings{}, err
@@ -1210,6 +1248,40 @@ func (s *adminService) DeleteAdminInvitation(ctx context.Context, invitationID s
 		ExpiresAt: formatTime(row.ExpiresAt),
 		CreatedAt: formatTime(row.CreatedAt),
 	}, nil
+}
+
+func (s *adminService) ListAgentAuthorizations(ctx context.Context) ([]AgentAuthorizationSummary, error) {
+	rows, err := s.queries.AdminListAgentAuthorizations(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]AgentAuthorizationSummary, 0, len(rows))
+	for _, row := range rows {
+		summary, err := agentAuthorizationSummaryFromListRow(row)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, summary)
+	}
+	return out, nil
+}
+
+func (s *adminService) SetAgentAuthorizationEnabled(ctx context.Context, authorizationID string, enabled bool) (AgentAuthorizationSummary, error) {
+	parsedID, err := uuid.Parse(authorizationID)
+	if err != nil {
+		return AgentAuthorizationSummary{}, fmt.Errorf("%w: authorization_id must be a UUID", ErrBadRequest)
+	}
+	row, err := s.queries.AdminSetAgentAuthorizationEnabled(ctx, dbq.AdminSetAgentAuthorizationEnabledParams{
+		ID:      parsedID,
+		Enabled: enabled,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return AgentAuthorizationSummary{}, fmt.Errorf("%w: agent authorization not found", ErrBadRequest)
+		}
+		return AgentAuthorizationSummary{}, err
+	}
+	return agentAuthorizationSummaryFromSetEnabledRow(row), nil
 }
 
 func (s *adminService) loadProject(ctx context.Context, projectKey string) (dbq.GetProjectByKeyRow, error) {
@@ -2171,9 +2243,8 @@ func newIngestToken() (string, string, error) {
 	if _, err := rand.Read(raw[:]); err != nil {
 		return "", "", err
 	}
-	token := "fr_" + base64.RawURLEncoding.EncodeToString(raw[:])
-	hash := sha256.Sum256([]byte(token))
-	return token, hex.EncodeToString(hash[:]), nil
+	token := TelemetryTokenPrefix + base64.RawURLEncoding.EncodeToString(raw[:])
+	return token, HashToken(token), nil
 }
 
 func ingestTokenSummary(id uuid.UUID, name string, enabled bool, expiresAt pgtype.Timestamptz, lastUsedAt pgtype.Timestamptz, createdAt time.Time) IngestTokenSummary {
@@ -2215,6 +2286,56 @@ func adminUserSummaryFromSetEnabledRow(row dbq.AdminSetUserEnabledRow) AdminUser
 		CreatedAt:   formatTime(row.CreatedAt),
 		UpdatedAt:   formatTime(row.UpdatedAt),
 	}
+}
+
+func agentAuthorizationSummaryFromListRow(row dbq.AdminListAgentAuthorizationsRow) (AgentAuthorizationSummary, error) {
+	projectKeys := []string{}
+	if len(row.ProjectKeys) > 0 {
+		if err := json.Unmarshal(row.ProjectKeys, &projectKeys); err != nil {
+			return AgentAuthorizationSummary{}, err
+		}
+	}
+	return AgentAuthorizationSummary{
+		ID:                   row.ID.String(),
+		ClientID:             row.ClientID,
+		ClientName:           row.ClientName,
+		CreatedByAdminUserID: uuidString(row.CreatedByAdminUserID),
+		CreatedByEmail:       textValue(row.CreatedByEmail),
+		AllProjects:          row.AllProjects,
+		ProjectKeys:          projectKeys,
+		Scopes:               append([]string(nil), row.Scopes...),
+		Enabled:              row.Enabled,
+		ExpiresAt:            formatTime(row.ExpiresAt),
+		ActivatedAt:          optionalTime(row.ActivatedAt),
+		LastUsedAt:           optionalTime(row.LastUsedAt),
+		CreatedAt:            formatTime(row.CreatedAt),
+		UpdatedAt:            formatTime(row.UpdatedAt),
+	}, nil
+}
+
+func agentAuthorizationSummaryFromSetEnabledRow(row dbq.AdminSetAgentAuthorizationEnabledRow) AgentAuthorizationSummary {
+	return AgentAuthorizationSummary{
+		ID:                   row.ID.String(),
+		ClientID:             row.ClientID,
+		ClientName:           row.ClientName,
+		CreatedByAdminUserID: uuidString(row.CreatedByAdminUserID),
+		AllProjects:          row.AllProjects,
+		ProjectKeys:          []string{},
+		Scopes:               append([]string(nil), row.Scopes...),
+		Enabled:              row.Enabled,
+		ExpiresAt:            formatTime(row.ExpiresAt),
+		ActivatedAt:          optionalTime(row.ActivatedAt),
+		LastUsedAt:           optionalTime(row.LastUsedAt),
+		CreatedAt:            formatTime(row.CreatedAt),
+		UpdatedAt:            formatTime(row.UpdatedAt),
+	}
+}
+
+func uuidString(value pgtype.UUID) string {
+	if !value.Valid {
+		return ""
+	}
+	return uuid.UUID(value.Bytes).String()
 }
 
 func optionalTime(value pgtype.Timestamptz) string {

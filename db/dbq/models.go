@@ -38,6 +38,27 @@ type AdminUser struct {
 	LastLoginAt  pgtype.Timestamptz `json:"last_login_at"`
 }
 
+type AgentAuthorization struct {
+	ID                   uuid.UUID          `json:"id"`
+	ClientID             string             `json:"client_id"`
+	ClientName           string             `json:"client_name"`
+	TokenHash            pgtype.Text        `json:"token_hash"`
+	CreatedByAdminUserID pgtype.UUID        `json:"created_by_admin_user_id"`
+	AllProjects          bool               `json:"all_projects"`
+	Scopes               []string           `json:"scopes"`
+	Enabled              bool               `json:"enabled"`
+	ExpiresAt            time.Time          `json:"expires_at"`
+	ActivatedAt          pgtype.Timestamptz `json:"activated_at"`
+	LastUsedAt           pgtype.Timestamptz `json:"last_used_at"`
+	CreatedAt            time.Time          `json:"created_at"`
+	UpdatedAt            time.Time          `json:"updated_at"`
+}
+
+type AgentAuthorizationProject struct {
+	AgentAuthorizationID uuid.UUID `json:"agent_authorization_id"`
+	ProjectID            uuid.UUID `json:"project_id"`
+}
+
 type Batch struct {
 	ID            uuid.UUID       `json:"id"`
 	ProjectID     uuid.UUID       `json:"project_id"`
@@ -109,6 +130,31 @@ type IngestToken struct {
 	ExpiresAt  pgtype.Timestamptz `json:"expires_at"`
 	LastUsedAt pgtype.Timestamptz `json:"last_used_at"`
 	CreatedAt  time.Time          `json:"created_at"`
+}
+
+type McpOauthClient struct {
+	ClientID     string    `json:"client_id"`
+	ClientName   string    `json:"client_name"`
+	RedirectUris []string  `json:"redirect_uris"`
+	ClientUri    string    `json:"client_uri"`
+	LogoUri      string    `json:"logo_uri"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+}
+
+type McpOauthCode struct {
+	CodeHash             string             `json:"code_hash"`
+	ClientID             string             `json:"client_id"`
+	RedirectUri          string             `json:"redirect_uri"`
+	CodeChallenge        string             `json:"code_challenge"`
+	CodeChallengeMethod  string             `json:"code_challenge_method"`
+	Resource             string             `json:"resource"`
+	Scopes               []string           `json:"scopes"`
+	AdminUserID          uuid.UUID          `json:"admin_user_id"`
+	AgentAuthorizationID uuid.UUID          `json:"agent_authorization_id"`
+	ExpiresAt            time.Time          `json:"expires_at"`
+	ConsumedAt           pgtype.Timestamptz `json:"consumed_at"`
+	CreatedAt            time.Time          `json:"created_at"`
 }
 
 type Project struct {

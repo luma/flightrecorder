@@ -23,11 +23,12 @@ The plugin registers an Autoload singleton named `FlightRecorderTelemetry`.
 
 Create a project in the flightrecorder admin UI first. If the collector has no
 projects, the dashboard shows an empty state and opens the Add Project wizard.
-The project wizard starts with empty event groups, query fields, and funnels, so
-define only the schema that matches your game.
+The project wizard includes the baseline `bug_report` event group and report
+query fields needed by the feedback Reports tab. Add any additional event
+groups, query fields, and funnels that match your game.
 
 Then configure the addon with the same project ID and an ingest token from that
-project's Settings tab:
+project's Settings tab. Ingest tokens are prefixed with `fr_tel_`:
 
 ```gdscript
 FlightRecorderTelemetry.configure({
