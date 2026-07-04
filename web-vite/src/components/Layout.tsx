@@ -1,18 +1,35 @@
-import { Link, Outlet } from "react-router-dom";
-import { useState } from "react";
+import { Link, NavLink, Outlet } from "react-router-dom";
+import { useRef, useState } from "react";
 import { useAuth } from "../auth/AuthContext";
+import { useDismiss } from "../hooks/useDismiss";
 import LogoMark from "./LogoMark";
 import ProjectControls from "./ProjectControls";
+
+const headerNavClass = ({ isActive }: { isActive: boolean }) =>
+  `border-b-2 px-1 py-1 text-sm font-medium transition-colors ${
+    isActive
+      ? "border-primary text-primary"
+      : "border-transparent text-on-surface-variant hover:text-on-surface"
+  }`;
+
+const menuNavClass = ({ isActive }: { isActive: boolean }) =>
+  `block rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+    isActive
+      ? "bg-surface-container text-primary"
+      : "text-on-surface-variant hover:bg-surface-container hover:text-on-surface"
+  }`;
 
 export default function Layout() {
   const { user, logout } = useAuth();
   const [profileOpen, setProfileOpen] = useState(false);
+  const profileRef = useRef<HTMLDivElement>(null);
+  useDismiss(profileRef, () => setProfileOpen(false), profileOpen);
   const initials = (user?.name || user?.email || "?").slice(0, 1).toUpperCase();
 
   return (
     <div className="min-h-screen bg-surface-dim text-on-surface">
-      <header className="hidden md:block bg-surface-container-low">
-        <div className="mx-auto flex max-w-7xl items-center gap-6 px-4 py-3">
+      <header className="bg-surface-container-low">
+        <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-x-6 gap-y-3 px-4 py-3">
           <Link
             to="/"
             className="flex shrink-0 items-center gap-2 transition-opacity hover:opacity-80"
@@ -23,14 +40,28 @@ export default function Layout() {
             </span>
           </Link>
 
-          <ProjectControls className="flex items-start gap-3 text-sm text-on-surface-variant" />
+          <nav aria-label="Primary" className="hidden items-center gap-4 sm:flex">
+            <NavLink to="/" end className={headerNavClass}>
+              Dashboard
+            </NavLink>
+            <NavLink to="/users" className={headerNavClass}>
+              Users
+            </NavLink>
+            <NavLink to="/agents" className={headerNavClass}>
+              Agents
+            </NavLink>
+          </nav>
 
-          <div className="relative ml-auto">
+          <ProjectControls className="order-last w-full md:order-none md:ml-auto md:w-auto" />
+
+          <div className="relative ml-auto md:ml-0" ref={profileRef}>
             <button
               type="button"
               onClick={() => setProfileOpen((open) => !open)}
-              className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full border border-outline-ghost bg-surface-container text-sm font-semibold text-on-surface"
               aria-label="Account"
+              aria-haspopup="menu"
+              aria-expanded={profileOpen}
+              className="flex h-10 w-10 cursor-pointer items-center justify-center overflow-hidden rounded-full border border-outline-ghost bg-surface-container text-sm font-semibold text-on-surface transition-colors hover:border-primary"
             >
               {user?.picture ? (
                 <img src={user.picture} alt="" className="h-full w-full object-cover" referrerPolicy="no-referrer" />
@@ -40,26 +71,21 @@ export default function Layout() {
             </button>
 
             {profileOpen ? (
-              <div className="absolute right-0 top-12 z-40 w-72 rounded-md border border-outline-ghost bg-surface-container-lowest p-3 shadow-xl">
+              <div className="glass-panel biolume-glow absolute right-0 top-12 z-40 w-72 rounded-md border border-outline-ghost p-3">
                 <div className="mb-3 min-w-0">
                   <p className="truncate text-sm font-semibold text-on-surface">{user?.name || user?.email}</p>
                   <p className="truncate text-xs text-on-surface-variant">{user?.email}</p>
                 </div>
-                <nav className="mb-3 border-y border-outline-ghost py-2">
-                  <Link
-                    to="/users"
-                    onClick={() => setProfileOpen(false)}
-                    className="block rounded-md px-3 py-2 text-sm font-medium text-on-surface-variant transition-colors hover:bg-surface-container hover:text-on-surface"
-                  >
+                <nav aria-label="Account" className="mb-3 border-y border-outline-ghost py-2">
+                  <NavLink to="/" end onClick={() => setProfileOpen(false)} className={menuNavClass}>
+                    Dashboard
+                  </NavLink>
+                  <NavLink to="/users" onClick={() => setProfileOpen(false)} className={menuNavClass}>
                     Users
-                  </Link>
-                  <Link
-                    to="/agents"
-                    onClick={() => setProfileOpen(false)}
-                    className="block rounded-md px-3 py-2 text-sm font-medium text-on-surface-variant transition-colors hover:bg-surface-container hover:text-on-surface"
-                  >
+                  </NavLink>
+                  <NavLink to="/agents" onClick={() => setProfileOpen(false)} className={menuNavClass}>
                     Agents
-                  </Link>
+                  </NavLink>
                 </nav>
                 <button type="button" onClick={logout} className="w-full btn-secondary text-left">
                   Logout
@@ -70,7 +96,7 @@ export default function Layout() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-7xl px-4 py-6 pb-24 md:pb-6">
+      <main className="mx-auto max-w-7xl px-4 py-6">
         <Outlet />
       </main>
     </div>

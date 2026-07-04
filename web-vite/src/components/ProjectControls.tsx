@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   api,
@@ -7,6 +7,7 @@ import {
   type ProjectSummary,
   type QueryField,
 } from "../api";
+import { Checkbox, Drawer, Input, Panel, Select } from "./AdminPagePrimitives";
 import { useProjectScope } from "../hooks/useProjectScope";
 import {
   EventGroupsBuilder,
@@ -234,8 +235,42 @@ export function AddProjectWizard({
     }
   };
 
+  // Dirty check covers every wizard field (all three steps), not just Identity.
+  const snapshot = () =>
+    JSON.stringify({
+      projectID,
+      displayName,
+      validationMode,
+      maxEvents,
+      allowUnknownEvents,
+      allowScreenshotFailures,
+      eventDays,
+      reportDays,
+      accessLogDays,
+      spatialEnabled,
+      zoneExtentM,
+      zoneCellM,
+      reportStatusesValue,
+      reportLabelsValue,
+      rateLimitSeconds,
+      eventGroups,
+      queryFields,
+      funnels,
+    });
+  const initialSnapshot = useRef<string | null>(null);
+  if (initialSnapshot.current === null) {
+    initialSnapshot.current = snapshot();
+  }
+
+  const requestClose = () => {
+    if (snapshot() !== initialSnapshot.current && !window.confirm("Discard this project draft?")) {
+      return;
+    }
+    onClose();
+  };
+
   return (
-    <Drawer title="Add Project" onClose={onClose}>
+    <Drawer title="Add Project" onClose={requestClose}>
       <div className="space-y-4 text-sm">
         <div className="flex flex-wrap gap-2">
           {["Identity", "Defaults", "Schema"].map((label, index) => (
@@ -300,72 +335,18 @@ export function AddProjectWizard({
         ) : null}
 
         <div className="flex flex-wrap justify-end gap-2">
-          <button type="button" onClick={onClose} className="btn-secondary">Cancel</button>
+          <button type="button" onClick={requestClose} className="btn-secondary">Cancel</button>
           {step > 0 ? <button type="button" onClick={() => setStep(step - 1)} className="btn-secondary">Back</button> : null}
           {step < 2 ? (
             <button type="button" onClick={() => setStep(step + 1)} className="btn-primary">Next</button>
           ) : (
-            <button type="button" onClick={submit} disabled={createProject.isPending} className="btn-primary disabled:opacity-50">
+            <button type="button" onClick={submit} disabled={createProject.isPending} className="btn-primary">
               {createProject.isPending ? "Saving..." : "Save Project"}
             </button>
           )}
         </div>
       </div>
     </Drawer>
-  );
-}
-
-function Panel({ children }: { children: ReactNode }) {
-  return <section className="rounded-md border border-outline-ghost bg-surface-container-low p-4">{children}</section>;
-}
-
-function Drawer({ title, children, onClose }: { title: string; children: ReactNode; onClose: () => void }) {
-  return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-black/40">
-      <aside className="h-full w-full max-w-5xl overflow-auto border-l border-outline-ghost bg-surface-container-lowest p-5 shadow-xl">
-        <div className="mb-4 flex items-center gap-3">
-          <h2 className="text-xl font-bold text-on-surface">{title}</h2>
-          <button type="button" onClick={onClose} className="ml-auto btn-secondary">Close</button>
-        </div>
-        {children}
-      </aside>
-    </div>
-  );
-}
-
-function Input({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (value: string) => void; placeholder?: string }) {
-  return (
-    <label className="block text-sm text-on-surface-variant">
-      {label}
-      <input value={value} placeholder={placeholder} onChange={(event) => onChange(event.target.value)} className="mt-1 w-full rounded-md border border-outline-ghost bg-surface-container px-2 py-1 text-on-surface outline-none focus:border-primary" />
-    </label>
-  );
-}
-
-function Checkbox({ label, checked, onChange }: { label: string; checked: boolean; onChange: (checked: boolean) => void }) {
-  return (
-    <label className="flex items-center gap-2 text-sm text-on-surface-variant">
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={(event) => onChange(event.target.checked)}
-        className="h-4 w-4 rounded border-outline-ghost bg-surface-container accent-primary"
-      />
-      <span>{label}</span>
-    </label>
-  );
-}
-
-function Select({ label, value, options, onChange }: { label: string; value: string; options: readonly string[]; onChange: (value: string) => void }) {
-  return (
-    <label className="block text-sm text-on-surface-variant">
-      {label}
-      <select value={value} onChange={(event) => onChange(event.target.value)} className="mt-1 w-full rounded-md border border-outline-ghost bg-surface-container px-2 py-1 text-on-surface outline-none focus:border-primary">
-        {options.map((option) => (
-          <option key={option || "any"} value={option}>{option || "any"}</option>
-        ))}
-      </select>
-    </label>
   );
 }
 

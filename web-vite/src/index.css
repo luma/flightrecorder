@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap');
+/* Manrope is loaded via <link> in index.html (preconnect + stylesheet) to avoid a render-blocking CSS @import. */
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
 
@@ -110,6 +110,16 @@ body {
   font-weight: 700;
   line-height: 1.25rem;
   padding: 0.375rem 0.75rem;
+  cursor: pointer;
+  transition: filter 150ms ease, transform 150ms ease;
+}
+
+.btn-primary:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.btn-primary:active:not(:disabled) {
+  transform: scale(0.97);
 }
 
 .btn-secondary {
@@ -119,12 +129,62 @@ body {
   font-size: 0.875rem;
   line-height: 1.25rem;
   padding: 0.375rem 0.75rem;
+  cursor: pointer;
+  transition: background-color 150ms ease, border-color 150ms ease, transform 150ms ease;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: var(--color-surface-container-high);
+  border-color: rgb(70 72 54 / 0.5);
+}
+
+.btn-secondary:active:not(:disabled) {
+  transform: scale(0.97);
 }
 
 .link-button {
   color: var(--color-primary);
   font-size: 0.875rem;
   line-height: 1.25rem;
+  cursor: pointer;
+  border-radius: 0.25rem;
+  transition: filter 150ms ease;
+}
+
+.link-button:hover:not(:disabled) {
+  filter: brightness(1.1);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.btn-primary:disabled,
+.btn-secondary:disabled,
+.link-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.btn-primary:focus-visible,
+.btn-secondary:focus-visible,
+.link-button:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+/* Form fields swap their outline for a border-color change; add a soft ring so
+   keyboard focus stays clearly visible. */
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  box-shadow: 0 0 0 3px rgb(222 242 91 / 0.15);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btn-primary,
+  .btn-secondary,
+  .link-button {
+    transition: none;
+  }
 }
 
 /* Display text tightened letter-spacing */

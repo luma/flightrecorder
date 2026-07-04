@@ -92,7 +92,7 @@ export default function MCPConsent() {
                 type="button"
                 onClick={() => confirm.mutate()}
                 disabled={!canConfirm || confirm.isPending}
-                className="btn-primary disabled:opacity-50"
+                className="btn-primary"
               >
                 {confirm.isPending ? "Confirming..." : "Confirm"}
               </button>

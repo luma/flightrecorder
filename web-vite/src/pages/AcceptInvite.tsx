@@ -46,7 +46,7 @@ export default function AcceptInvite() {
 
         {error ? <p className="text-sm text-status-error">{error}</p> : null}
 
-        <button type="submit" disabled={!code.trim() || pending} className="w-full btn-primary disabled:opacity-50">
+        <button type="submit" disabled={!code.trim() || pending} className="w-full btn-primary">
           {pending ? "Checking..." : "Accept Invite"}
         </button>
       </form>

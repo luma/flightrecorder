@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useIsMutating, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   api,
@@ -15,6 +15,22 @@ import {
   type SettingsResponse,
   type TraceEvent,
 } from "../api";
+import {
+  Badge,
+  Checkbox,
+  ConfirmActionButton,
+  DateTime,
+  Drawer,
+  Input,
+  Panel,
+  Select,
+  Table,
+  copyText,
+  errorMessage,
+  pendingActionID,
+  type BadgeTone,
+} from "../components/AdminPagePrimitives";
+import { useDismiss } from "../hooks/useDismiss";
 import {
   EventGroupsBuilder,
   FunnelsBuilder,
@@ -152,25 +168,9 @@ export default function Dashboard() {
     window.history.replaceState(null, "", `${window.location.pathname}?${params.toString()}`);
   }, [activeTab, filters]);
 
-  const adminFilters = useMemo(() => toAdminFilters(filters), [filters]);
   const selectedProjectExists = projectsLoaded && projectList.some((project) => project.project_id === filters.projectID);
   const hasProject = !!filters.projectID && selectedProjectExists;
 
-  const summary = useQuery({
-    enabled: hasProject,
-    queryKey: ["summary", adminFilters],
-    queryFn: () => api.summary(adminFilters),
-  });
-  const events = useQuery({
-    enabled: hasProject,
-    queryKey: ["events", adminFilters],
-    queryFn: () => api.events(adminFilters),
-  });
-  const reports = useQuery({
-    enabled: hasProject,
-    queryKey: ["reports", adminFilters],
-    queryFn: () => api.reports(adminFilters),
-  });
   const eventTypes = useQuery({
     enabled: hasProject,
     queryKey: ["event-types", filters.projectID],
@@ -182,21 +182,44 @@ export default function Dashboard() {
     queryFn: () => api.settings(filters.projectID),
   });
   const spatialEnabled = settings.data?.project.map_config.spatial_enabled !== false;
+
+  // Each endpoint only receives the filters its tab renders (tabFilterKeys),
+  // so a filter can never invisibly constrain another tab's data.
+  const scopedFilters = useMemo(() => {
+    const scope = (tab: Tab) => toAdminFilters(filters, visibleFilterKeys(tab, spatialEnabled));
+    return Object.fromEntries(tabs.map((tab) => [tab, scope(tab)])) as Record<Tab, AdminFilters>;
+  }, [filters, spatialEnabled]);
+
+  const summary = useQuery({
+    enabled: hasProject,
+    queryKey: ["summary", scopedFilters.Overview],
+    queryFn: () => api.summary(scopedFilters.Overview),
+  });
+  const events = useQuery({
+    enabled: hasProject,
+    queryKey: ["events", scopedFilters.Events],
+    queryFn: () => api.events(scopedFilters.Events),
+  });
+  const reports = useQuery({
+    enabled: hasProject,
+    queryKey: ["reports", scopedFilters.Reports],
+    queryFn: () => api.reports(scopedFilters.Reports),
+  });
   const regionHeatmap = useQuery({
     enabled: hasProject && spatialEnabled,
-    queryKey: ["region-heatmap", adminFilters],
-    queryFn: () => api.regionHeatmap(adminFilters),
+    queryKey: ["region-heatmap", scopedFilters.Regions],
+    queryFn: () => api.regionHeatmap(scopedFilters.Regions),
   });
   const firstRegion = filters.regionID || regionHeatmap.data?.cells[0]?.region_id || "unknown";
   const zoneHeatmap = useQuery({
     enabled: hasProject && spatialEnabled,
-    queryKey: ["zone-heatmap", adminFilters, firstRegion],
-    queryFn: () => api.zoneHeatmap({ ...adminFilters, region_id: firstRegion }),
+    queryKey: ["zone-heatmap", scopedFilters.Zone, firstRegion],
+    queryFn: () => api.zoneHeatmap({ ...scopedFilters.Zone, region_id: firstRegion }),
   });
   const funnels = useQuery({
     enabled: hasProject,
-    queryKey: ["funnels", adminFilters],
-    queryFn: () => api.funnels(adminFilters),
+    queryKey: ["funnels", scopedFilters.Funnels],
+    queryFn: () => api.funnels(scopedFilters.Funnels),
   });
 
   const selectedPlayer = filters.playerID || events.data?.events[0]?.player_id || "";
@@ -226,7 +249,7 @@ export default function Dashboard() {
   }, [activeTab, eventTypes.data, events.data, funnels.data, reports.data, regionHeatmap.data, trace.data, zoneHeatmap.data]);
 
   const exportRows = (format: ExportFormat) => {
-    exportData(`${activeTab.toLowerCase()}-${filters.projectID}.${format}`, currentRows, format, adminFilters);
+    exportData(`${activeTab.toLowerCase()}-${filters.projectID}.${format}`, currentRows, format, scopedFilters[activeTab]);
   };
 
   const setFilter = <K extends keyof Filters>(key: K, value: Filters[K]) => {
@@ -269,36 +292,52 @@ export default function Dashboard() {
         </div>
         <div className="ml-auto flex flex-wrap items-end gap-2">
           <button type="button" onClick={copyPermalink} className="btn-secondary">Copy Link</button>
-          <button type="button" onClick={() => exportRows("json")} className="btn-secondary">JSON</button>
-          <button type="button" onClick={() => exportRows("csv")} className="btn-secondary">CSV</button>
-          <button type="button" onClick={() => exportRows("ndjson")} className="btn-secondary">NDJSON</button>
+          {exportableTabs.has(activeTab) ? <ExportMenu activeTab={activeTab} onExport={exportRows} /> : null}
         </div>
       </header>
 
-      <FilterBar
-        filters={filters}
-        setFilter={setFilter}
-        eventTypes={eventTypes.data?.event_types ?? []}
-        queryFields={settings.data?.project.query_fields ?? []}
-      />
-
-      <nav className="flex flex-wrap gap-2">
+      <nav role="tablist" aria-label="Dashboard sections" className="flex flex-wrap gap-1 border-b border-outline-ghost">
         {visibleTabs.map((tab) => (
           <button
             key={tab}
             type="button"
+            role="tab"
+            aria-selected={activeTab === tab}
             onClick={() => setActiveTab(tab)}
-            className={activeTab === tab ? "btn-primary" : "btn-secondary"}
+            className={`-mb-px cursor-pointer border-b-2 px-3 py-2 text-sm font-medium transition-colors ${
+              activeTab === tab
+                ? "border-primary text-primary"
+                : "border-transparent text-on-surface-variant hover:text-on-surface"
+            }`}
           >
             {tab}
           </button>
         ))}
       </nav>
 
-      {activeTab === "Overview" ? <Overview summary={summary.data} loading={summary.isLoading} /> : null}
+      {tabFilterKeys[activeTab].length > 0 ? (
+        <FilterBar
+          filters={filters}
+          setFilter={setFilter}
+          eventTypes={eventTypes.data?.event_types ?? []}
+          queryFields={settings.data?.project.query_fields ?? []}
+          activeTab={activeTab}
+          spatialEnabled={spatialEnabled}
+        />
+      ) : null}
+
+      {activeTab === "Overview" ? (
+        <Overview
+          summary={summary.data}
+          loading={summary.isLoading}
+          error={queryError(summary.error, "Failed to load summary")}
+        />
+      ) : null}
       {activeTab === "Events" ? (
         <EventsTable
           events={events.data?.events ?? []}
+          loading={events.isLoading}
+          error={queryError(events.error, "Failed to load events")}
           queryFields={settings.data?.project.query_fields ?? []}
           onOpen={setSelectedEvent}
           onTrace={(playerID) => {
@@ -311,12 +350,16 @@ export default function Dashboard() {
         <TraceTable
           playerID={selectedPlayer}
           events={trace.data?.events ?? []}
+          loading={trace.isLoading}
+          error={queryError(trace.error, "Failed to load trace")}
           queryFields={settings.data?.project.query_fields ?? []}
         />
       ) : null}
       {activeTab === "Regions" ? (
         <HeatmapTable
           cells={regionHeatmap.data?.cells ?? []}
+          loading={regionHeatmap.isLoading}
+          error={queryError(regionHeatmap.error, "Failed to load region heatmap")}
           onSelect={(cell) => {
             setFilter("regionID", cell.region_id);
             setFilter("eventType", cell.event_type);
@@ -327,16 +370,26 @@ export default function Dashboard() {
       {activeTab === "Zone" ? (
         <HeatmapTable
           cells={zoneHeatmap.data?.cells ?? []}
+          loading={zoneHeatmap.isLoading}
+          error={queryError(zoneHeatmap.error, "Failed to load zone heatmap")}
           onSelect={(cell) => {
             setFilter("zoneID", cell.zone_id ?? "");
             setFilter("eventType", cell.event_type);
           }}
         />
       ) : null}
-      {activeTab === "Funnels" ? <FunnelsTable funnels={funnels.data?.funnels ?? []} /> : null}
+      {activeTab === "Funnels" ? (
+        <FunnelsTable
+          funnels={funnels.data?.funnels ?? []}
+          loading={funnels.isLoading}
+          error={queryError(funnels.error, "Failed to load funnels")}
+        />
+      ) : null}
       {activeTab === "Reports" ? (
         <ReportsTable
           reports={reports.data?.reports ?? []}
+          loading={reports.isLoading}
+          error={queryError(reports.error, "Failed to load reports")}
           onOpen={(report) => setSelectedReportID(report.report_id)}
           onTrace={(playerID) => {
             setFilter("playerID", playerID);
@@ -372,55 +425,164 @@ export default function Dashboard() {
   );
 }
 
+/* Tabs whose row data can be exported; Overview and Settings show no row data. */
+const exportableTabs: ReadonlySet<Tab> = new Set(["Events", "Trace", "Regions", "Zone", "Funnels", "Reports", "Schema"]);
+
+/* Which filters each tab actually uses; tabs with an empty list hide the filter
+   bar, and scopedFilters strips the same keys from that tab's API requests so
+   an invisible filter can never constrain the data. */
+const tabFilterKeys: Record<Tab, string[]> = {
+  Overview: ["range", "from", "to", "event", "version", "channel"],
+  Events: ["range", "from", "to", "event", "region", "zone", "player", "field", "fieldValue", "version", "channel"],
+  Trace: ["player"],
+  Regions: ["range", "from", "to", "event", "region", "version", "channel"],
+  Zone: ["range", "from", "to", "event", "region", "zone", "version", "channel"],
+  Funnels: ["range", "from", "to", "version", "channel"],
+  Reports: ["range", "from", "to", "player", "region", "zone", "reportStatus", "reportLabel", "version", "channel"],
+  Schema: [],
+  Settings: [],
+};
+
+/* The tab's filter keys minus region/zone when spatial features are off —
+   shared by FilterBar (what renders) and scopedFilters (what is sent). */
+function visibleFilterKeys(tab: Tab, spatialEnabled: boolean): Set<string> {
+  return new Set(tabFilterKeys[tab].filter((key) => spatialEnabled || (key !== "region" && key !== "zone")));
+}
+
 function FilterBar({
   filters,
   setFilter,
   eventTypes,
   queryFields,
+  activeTab,
+  spatialEnabled,
 }: {
   filters: Filters;
   setFilter: <K extends keyof Filters>(key: K, value: Filters[K]) => void;
   eventTypes: EventTypeSummary[];
   queryFields: QueryField[];
+  activeTab: Tab;
+  spatialEnabled: boolean;
 }) {
+  const visible = visibleFilterKeys(activeTab, spatialEnabled);
+  const show = (key: string) => visible.has(key);
   return (
     <Panel>
       <div className="grid gap-3 md:grid-cols-4">
-        <Select
-          label="Range"
-          value={rangeLabel(filters)}
-          options={timePresets.map(([label]) => label)}
-          onChange={(value) => applyPreset(value, setFilter)}
-        />
-        <Input label="From" value={filters.from} onChange={(value) => setFilter("from", value)} placeholder="RFC3339" />
-        <Input label="To" value={filters.to} onChange={(value) => setFilter("to", value)} placeholder="RFC3339" />
-        <Select
-          label="Event"
-          value={filters.eventType}
-          options={["", ...eventTypes.map((eventType) => eventType.event_type)]}
-          onChange={(value) => setFilter("eventType", value)}
-        />
-        <Input label="Region" value={filters.regionID} onChange={(value) => setFilter("regionID", value)} />
-        <Input label="Zone" value={filters.zoneID} onChange={(value) => setFilter("zoneID", value)} />
-        <Input label="Player" value={filters.playerID} onChange={(value) => setFilter("playerID", value)} />
-        <Select
-          label="Field"
-          value={filters.fieldKey}
-          options={["", ...queryFields.filter((field) => field.filterable).map((field) => field.key)]}
-          onChange={(value) => setFilter("fieldKey", value)}
-        />
-        <Input label="Field value" value={filters.fieldValue} onChange={(value) => setFilter("fieldValue", value)} />
-        <Input label="Version" value={filters.gameVersion} onChange={(value) => setFilter("gameVersion", value)} />
-        <Input label="Channel" value={filters.buildChannel} onChange={(value) => setFilter("buildChannel", value)} />
-        <Select
-          label="Report status"
-          value={filters.reportStatus}
-          options={["", ...reportStatuses]}
-          onChange={(value) => setFilter("reportStatus", value)}
-        />
-        <Input label="Report label" value={filters.reportLabel} onChange={(value) => setFilter("reportLabel", value)} />
+        {show("range") ? (
+          <Select
+            label="Range"
+            value={rangeLabel(filters)}
+            options={timePresets.map(([label]) => label)}
+            onChange={(value) => applyPreset(value, setFilter)}
+          />
+        ) : null}
+        {show("from") ? (
+          <Input
+            label="From"
+            type="datetime-local"
+            value={isoToLocalInput(filters.from)}
+            onChange={(value) => setFilter("from", localInputToISO(value))}
+          />
+        ) : null}
+        {show("to") ? (
+          <Input
+            label="To"
+            type="datetime-local"
+            value={isoToLocalInput(filters.to)}
+            onChange={(value) => setFilter("to", localInputToISO(value))}
+          />
+        ) : null}
+        {show("event") ? (
+          <Select
+            label="Event"
+            value={filters.eventType}
+            options={["", ...eventTypes.map((eventType) => eventType.event_type)]}
+            onChange={(value) => setFilter("eventType", value)}
+          />
+        ) : null}
+        {show("region") ? (
+          <Input label="Region" value={filters.regionID} onChange={(value) => setFilter("regionID", value)} />
+        ) : null}
+        {show("zone") ? (
+          <Input label="Zone" value={filters.zoneID} onChange={(value) => setFilter("zoneID", value)} />
+        ) : null}
+        {show("player") ? (
+          <Input label="Player" value={filters.playerID} onChange={(value) => setFilter("playerID", value)} />
+        ) : null}
+        {show("field") ? (
+          <Select
+            label="Field"
+            value={filters.fieldKey}
+            options={["", ...queryFields.filter((field) => field.filterable).map((field) => field.key)]}
+            onChange={(value) => setFilter("fieldKey", value)}
+          />
+        ) : null}
+        {show("fieldValue") ? (
+          <Input label="Field value" value={filters.fieldValue} onChange={(value) => setFilter("fieldValue", value)} />
+        ) : null}
+        {show("version") ? (
+          <Input label="Version" value={filters.gameVersion} onChange={(value) => setFilter("gameVersion", value)} />
+        ) : null}
+        {show("channel") ? (
+          <Input label="Channel" value={filters.buildChannel} onChange={(value) => setFilter("buildChannel", value)} />
+        ) : null}
+        {show("reportStatus") ? (
+          <Select
+            label="Report status"
+            value={filters.reportStatus}
+            options={["", ...reportStatuses]}
+            onChange={(value) => setFilter("reportStatus", value)}
+          />
+        ) : null}
+        {show("reportLabel") ? (
+          <Input label="Report label" value={filters.reportLabel} onChange={(value) => setFilter("reportLabel", value)} />
+        ) : null}
       </div>
     </Panel>
+  );
+}
+
+function ExportMenu({ activeTab, onExport }: { activeTab: Tab; onExport: (format: ExportFormat) => void }) {
+  const [open, setOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  useDismiss(menuRef, () => setOpen(false), open);
+  return (
+    <div className="relative" ref={menuRef}>
+      <button
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        title={`Export the rows currently shown in the ${activeTab} tab`}
+        onClick={() => setOpen((current) => !current)}
+        className="btn-secondary"
+      >
+        Export ▾
+      </button>
+      {open ? (
+        <div
+          role="menu"
+          aria-label="Export format"
+          className="glass-panel biolume-glow absolute right-0 top-full z-40 mt-1 w-44 rounded-md border border-outline-ghost p-1"
+        >
+          <p className="px-3 py-1 text-xs uppercase tracking-wide text-on-surface-muted">{activeTab} rows as</p>
+          {(["json", "csv", "ndjson"] as const).map((format) => (
+            <button
+              key={format}
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                onExport(format);
+                setOpen(false);
+              }}
+              className="block w-full cursor-pointer rounded-md px-3 py-2 text-left text-sm text-on-surface-variant transition-colors hover:bg-surface-container hover:text-on-surface"
+            >
+              {format.toUpperCase()}
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -444,10 +606,13 @@ function ProjectEmptyState({ onAddProject }: { onAddProject: () => void }) {
 function Overview({
   summary,
   loading,
+  error,
 }: {
   summary?: Awaited<ReturnType<typeof api.summary>>;
   loading: boolean;
+  error?: string;
 }) {
+  if (error) return <Panel><p className="text-sm text-status-error">{error}</p></Panel>;
   if (loading) return <Panel>Loading...</Panel>;
   const metrics = [
     ["Events", summary?.event_count ?? 0],
@@ -471,11 +636,15 @@ function Overview({
 
 function EventsTable({
   events,
+  loading,
+  error,
   queryFields,
   onOpen,
   onTrace,
 }: {
   events: EventSummary[];
+  loading?: boolean;
+  error?: string;
   queryFields: QueryField[];
   onOpen: (event: EventSummary) => void;
   onTrace: (playerID: string) => void;
@@ -484,25 +653,43 @@ function EventsTable({
   return (
     <Table
       headers={["Type", "Player", "Region", "Zone", ...visibleFields.map((field) => field.label || field.key), "Version", "Time", "Actions"]}
-      rows={events.map((event) => [
-        event.event_type,
-        event.player_id,
-        event.region_id,
-        event.zone_id,
-        ...visibleFields.map((field) => formatFieldValue(event.fields?.[field.key])),
-        event.game_version,
-        event.real_ts,
-        <div className="flex gap-2">
-          <button type="button" onClick={() => onOpen(event)} className="link-button">Open</button>
-          <button type="button" onClick={() => onTrace(event.player_id)} className="link-button">Trace</button>
-          <button type="button" onClick={() => copyText(event.id)} className="link-button">Copy ID</button>
-        </div>,
-      ])}
+      loading={loading}
+      error={error}
+      emptyMessage="No events match the current filters."
+      rows={events.map((event) => ({
+        key: event.id,
+        cells: [
+          event.event_type,
+          event.player_id,
+          event.region_id,
+          event.zone_id,
+          ...visibleFields.map((field) => formatFieldValue(event.fields?.[field.key])),
+          event.game_version,
+          <DateTime value={event.real_ts} />,
+          <div className="flex gap-2">
+            <button type="button" onClick={() => onOpen(event)} className="link-button">Open</button>
+            <button type="button" onClick={() => onTrace(event.player_id)} className="link-button">Trace</button>
+            <button type="button" onClick={() => copyText(event.id)} className="link-button">Copy ID</button>
+          </div>,
+        ],
+      }))}
     />
   );
 }
 
-function TraceTable({ playerID, events, queryFields }: { playerID?: string; events: TraceEvent[]; queryFields?: QueryField[] }) {
+function TraceTable({
+  playerID,
+  events,
+  loading,
+  error,
+  queryFields,
+}: {
+  playerID?: string;
+  events: TraceEvent[];
+  loading?: boolean;
+  error?: string;
+  queryFields?: QueryField[];
+}) {
   const visibleFields = (queryFields ?? []).slice(0, 3);
   return (
     <section className="space-y-3">
@@ -512,77 +699,132 @@ function TraceTable({ playerID, events, queryFields }: { playerID?: string; even
       </div>
       <Table
         headers={["Type", "Region", "Zone", ...visibleFields.map((field) => field.label || field.key), "Game time", "Time", "Payload"]}
-        rows={events.map((event) => [
-          event.event_type,
-          event.region_id,
-          event.zone_id,
-          ...visibleFields.map((field) => formatFieldValue(event.fields?.[field.key])),
-          String(event.game_time),
-          event.real_ts,
-          JSON.stringify(event.payload),
-        ])}
+        loading={loading}
+        error={error}
+        emptyMessage={playerID ? "No trace events for this player in the selected project." : "Select a player (via the Player filter or a Trace action) to view their event trail."}
+        rows={events.map((event) => ({
+          key: event.id,
+          cells: [
+            event.event_type,
+            event.region_id,
+            event.zone_id,
+            ...visibleFields.map((field) => formatFieldValue(event.fields?.[field.key])),
+            String(event.game_time),
+            <DateTime value={event.real_ts} />,
+            JSON.stringify(event.payload),
+          ],
+        }))}
       />
     </section>
   );
 }
 
-function HeatmapTable({ cells, onSelect }: { cells: HeatmapCell[]; onSelect: (cell: HeatmapCell) => void }) {
+function HeatmapTable({
+  cells,
+  loading,
+  error,
+  onSelect,
+}: {
+  cells: HeatmapCell[];
+  loading?: boolean;
+  error?: string;
+  onSelect: (cell: HeatmapCell) => void;
+}) {
   return (
     <Table
       headers={["Region", "Zone", "Grid", "Type", "Count", "Actions"]}
-      rows={cells.map((cell) => [
-        cell.region_id,
-        cell.zone_id ?? "",
-        cell.grid_x === undefined ? "" : `${cell.grid_x}, ${cell.grid_z}`,
-        cell.event_type,
-        String(cell.event_count),
-        <button type="button" onClick={() => onSelect(cell)} className="link-button">Filter</button>,
-      ])}
+      loading={loading}
+      error={error}
+      emptyMessage="No heatmap cells match the current filters."
+      rows={cells.map((cell) => ({
+        key: `${cell.region_id}|${cell.zone_id ?? ""}|${cell.grid_x ?? ""},${cell.grid_z ?? ""}|${cell.event_type}`,
+        cells: [
+          cell.region_id,
+          cell.zone_id ?? "",
+          cell.grid_x === undefined ? "" : `${cell.grid_x}, ${cell.grid_z}`,
+          cell.event_type,
+          String(cell.event_count),
+          <button type="button" onClick={() => onSelect(cell)} className="link-button">Filter</button>,
+        ],
+      }))}
     />
   );
 }
 
-function FunnelsTable({ funnels }: { funnels: FunnelSummary[] }) {
+function FunnelsTable({
+  funnels,
+  loading,
+  error,
+}: {
+  funnels: FunnelSummary[];
+  loading?: boolean;
+  error?: string;
+}) {
   return (
     <Table
       headers={["Name", "Description", "Started", "Completed", "Rate", "Drop-off", "Steps"]}
-      rows={funnels.map((funnel) => [
-        funnel.name,
-        funnel.description,
-        String(funnel.started),
-        String(funnel.completed),
-        `${Math.round(funnel.rate * 100)}%`,
-        funnel.dropoff,
-        (funnel.steps ?? []).map((step) => `${step.label}: ${step.count}`).join(", "),
-      ])}
+      loading={loading}
+      error={error}
+      emptyMessage="No funnels defined yet. Add them in the Schema tab."
+      rows={funnels.map((funnel) => ({
+        key: funnel.id || funnel.name,
+        cells: [
+          funnel.name,
+          funnel.description,
+          String(funnel.started),
+          String(funnel.completed),
+          `${Math.round(funnel.rate * 100)}%`,
+          funnel.dropoff,
+          (funnel.steps ?? []).map((step) => `${step.label}: ${step.count}`).join(", "),
+        ],
+      }))}
     />
   );
 }
 
+const reportStatusTones: Record<string, BadgeTone> = {
+  new: "info",
+  seen: "neutral",
+  needs_more_info: "warning",
+  reproduced: "warning",
+  fixed: "success",
+  wont_fix: "neutral",
+};
+
 function ReportsTable({
   reports,
+  loading,
+  error,
   onOpen,
   onTrace,
 }: {
   reports: ReportSummary[];
+  loading?: boolean;
+  error?: string;
   onOpen: (report: ReportSummary) => void;
   onTrace: (playerID: string) => void;
 }) {
   return (
     <Table
       headers={["Details", "Report", "Status", "Labels", "Mood", "Notes", "Player", "Region", "Created", "Trace"]}
-      rows={reports.map((report) => [
-        <button type="button" onClick={() => onOpen(report)} className="btn-secondary">Open</button>,
-        <button type="button" onClick={() => onOpen(report)} className="link-button">{report.report_id}</button>,
-        report.status,
-        report.labels.join(", "),
-        report.mood_label,
-        report.notes_preview,
-        report.player_id,
-        report.region_id,
-        report.created_at,
-        <button type="button" onClick={() => onTrace(report.player_id)} className="link-button">Trace</button>,
-      ])}
+      loading={loading}
+      error={error}
+      emptyMessage="No reports match the current filters."
+      rows={reports.map((report) => ({
+        key: report.report_id,
+        cells: [
+          <button type="button" onClick={() => onOpen(report)} className="btn-secondary">Open</button>,
+          <button type="button" onClick={() => onOpen(report)} className="link-button">{report.report_id}</button>,
+          <Badge tone={reportStatusTones[report.status] ?? "neutral"}>{report.status}</Badge>,
+          report.labels.join(", "),
+          report.mood_label,
+          report.notes_preview,
+          report.player_id,
+          report.region_id,
+          <DateTime value={report.created_at} />,
+          <button type="button" onClick={() => onTrace(report.player_id)} className="link-button">Trace</button>,
+        ],
+      }))}
     />
   );
 }
@@ -657,23 +899,31 @@ function SchemaTable({
     <div className="space-y-4">
       <Table
         headers={["Event type", "Count", "Last seen", "Sample payload"]}
-        rows={eventTypes.map((eventType) => [
-          eventType.event_type,
-          String(eventType.event_count),
-          eventType.last_seen_at,
-          JSON.stringify(eventType.sample_payload),
-        ])}
+        emptyMessage="No events ingested yet, so no event types have been observed."
+        rows={eventTypes.map((eventType) => ({
+          key: eventType.event_type,
+          cells: [
+            eventType.event_type,
+            String(eventType.event_count),
+            <DateTime value={eventType.last_seen_at} />,
+            JSON.stringify(eventType.sample_payload),
+          ],
+        }))}
       />
       <Table
         headers={["Field", "Label", "Source", "Type", "Filter", "Aggregations"]}
-        rows={queryFields.map((field) => [
-          field.key,
-          field.label,
-          field.source,
-          field.type,
-          field.filterable ? "yes" : "no",
-          field.aggregations.join(", "),
-        ])}
+        emptyMessage="No query fields defined. Add them in the builder below."
+        rows={queryFields.map((field, index) => ({
+          key: field.key || `draft-${index}`,
+          cells: [
+            field.key,
+            field.label,
+            field.source,
+            field.type,
+            field.filterable ? "yes" : "no",
+            field.aggregations.join(", "),
+          ],
+        }))}
       />
       {project ? (
         <div className="space-y-4">
@@ -689,7 +939,7 @@ function SchemaTable({
           ) : null}
           {saveStatus ? <p className="text-sm text-on-surface-variant">{saveStatus}</p> : null}
           <div className="flex justify-end">
-            <button type="button" onClick={submit} disabled={projectUpdatePending} className="btn-primary disabled:opacity-50">
+            <button type="button" onClick={submit} disabled={projectUpdatePending} className="btn-primary">
               {projectUpdatePending ? "Saving..." : "Save Schema"}
             </button>
           </div>
@@ -733,6 +983,8 @@ function Settings({
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["settings", projectID] }),
   });
 
+  const togglingTokenID = pendingActionID(toggleToken, (variables) => variables.id);
+
   return (
     <div className="space-y-4">
       <Panel>
@@ -756,7 +1008,7 @@ function Settings({
           }}
         >
           <Input label="Token name" value={tokenName} onChange={setTokenName} placeholder="local-dev" />
-          <button type="submit" disabled={!trimmedTokenName || createToken.isPending} className="btn-primary disabled:opacity-50">
+          <button type="submit" disabled={!trimmedTokenName || createToken.isPending} className="btn-primary">
             {createToken.isPending ? "Creating..." : "Create Token"}
           </button>
         </form>
@@ -783,21 +1035,34 @@ function Settings({
             {tokenCopyStatus ? <p className="mt-2 text-xs text-on-surface-variant">{tokenCopyStatus}</p> : null}
           </div>
         ) : null}
+        {toggleToken.error ? (
+          <p className="mb-3 text-sm text-status-error">
+            {errorMessage(toggleToken.error, "Failed to update token")}
+          </p>
+        ) : null}
         <Table
-          headers={["Name", "Enabled", "Last used", "Created", "Actions"]}
-          rows={(settings?.tokens ?? []).map((token) => [
-            token.name,
-            token.enabled ? "yes" : "no",
-            token.last_used_at ?? "",
-            token.created_at,
-            <button
-              type="button"
-              onClick={() => toggleToken.mutate({ id: token.id, enabled: !token.enabled })}
-              className="link-button"
-            >
-              {token.enabled ? "Disable" : "Enable"}
-            </button>,
-          ])}
+          headers={["Name", "Status", "Last used", "Created", "Actions"]}
+          emptyMessage="No ingest tokens yet. Create one above to start sending events."
+          rows={(settings?.tokens ?? []).map((token) => ({
+            key: token.id,
+            className: token.enabled ? undefined : "opacity-60",
+            cells: [
+              token.name,
+              <Badge tone={token.enabled ? "success" : "error"}>{token.enabled ? "Active" : "Disabled"}</Badge>,
+              <DateTime value={token.last_used_at} fallback="Never" />,
+              <DateTime value={token.created_at} />,
+              <ConfirmActionButton
+                label={token.enabled ? "Disable" : "Enable"}
+                pending={togglingTokenID === token.id}
+                confirmMessage={
+                  token.enabled
+                    ? `Disable token "${token.name}"? Clients using it will stop ingesting immediately.`
+                    : undefined
+                }
+                onConfirm={() => toggleToken.mutate({ id: token.id, enabled: !token.enabled })}
+              />,
+            ],
+          }))}
         />
       </Panel>
     </div>
@@ -942,7 +1207,7 @@ function ProjectSettingsEditor({ settings }: { settings?: SettingsResponse }) {
         ) : null}
         {saveStatus ? <p className="text-sm text-on-surface-variant">{saveStatus}</p> : null}
         <div className="flex justify-end">
-          <button type="button" onClick={submit} disabled={projectUpdatePending} className="btn-primary disabled:opacity-50">
+          <button type="button" onClick={submit} disabled={projectUpdatePending} className="btn-primary">
             {projectUpdatePending ? "Saving..." : "Save Settings"}
           </button>
         </div>
@@ -1014,12 +1279,6 @@ function ReportDrawer({
   const [labels, setLabels] = useState("");
   const [note, setNote] = useState("");
 
-  useEffect(() => {
-    setStatus(report?.status ?? "");
-    setLabels(report?.labels.join(", ") ?? "");
-    setNote("");
-  }, [report]);
-
   const mutation = useMutation({
     mutationFn: () =>
       report
@@ -1035,10 +1294,33 @@ function ReportDrawer({
       setNote("");
     },
   });
+  const { reset: resetMutation } = mutation;
+
+  // Re-seed only when a different report opens — keying on the object would
+  // also fire on post-save refetches and wipe the user's context.
+  useEffect(() => {
+    setStatus(report?.status ?? "");
+    setLabels(report?.labels.join(", ") ?? "");
+    setNote("");
+    resetMutation();
+  }, [report?.report_id, resetMutation]);
+
+  const dirty =
+    note.trim() !== "" ||
+    (report ? status !== report.status || labels !== report.labels.join(", ") : false);
+
+  // All close paths (Close button, Escape, scrim, Trace Player) must pass
+  // through this guard so unsaved edits are never silently discarded.
+  const confirmDiscard = () => !dirty || window.confirm("Discard your unsaved changes to this report?");
+
+  const requestClose = () => {
+    if (!confirmDiscard()) return;
+    onClose();
+  };
 
   if (!report && !loading) return null;
   return (
-    <Drawer title={report ? `Report ${report.report_id}` : "Report"} onClose={onClose}>
+    <Drawer title={report ? `Report ${report.report_id}` : "Report"} onClose={requestClose}>
       {loading || !report ? (
         <p className="text-sm text-on-surface-variant">Loading...</p>
       ) : (
@@ -1071,9 +1353,23 @@ function ReportDrawer({
             Note
             <textarea value={note} onChange={(event) => setNote(event.target.value)} className="mt-1 h-24 w-full rounded-md border border-outline-ghost bg-surface-container px-2 py-1 text-on-surface outline-none focus:border-primary" />
           </label>
+          {mutation.error ? (
+            <p className="text-status-error">{errorMessage(mutation.error, "Failed to save report")}</p>
+          ) : null}
+          {mutation.isSuccess ? <p className="text-status-success">Saved</p> : null}
           <div className="flex flex-wrap gap-2">
-            <button type="button" onClick={() => mutation.mutate()} className="btn-primary">Save</button>
-            <button type="button" onClick={() => onTrace(report.player_id)} className="btn-secondary">Trace Player</button>
+            <button type="button" onClick={() => mutation.mutate()} disabled={mutation.isPending} className="btn-primary">
+              {mutation.isPending ? "Saving..." : "Save"}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (confirmDiscard()) onTrace(report.player_id);
+              }}
+              className="btn-secondary"
+            >
+              Trace Player
+            </button>
             <button type="button" onClick={() => copyText(report.player_id)} className="btn-secondary">Copy Player</button>
           </div>
           <JSONBlock label="Context" value={report.context} />
@@ -1094,91 +1390,6 @@ function ReportDrawer({
         </div>
       )}
     </Drawer>
-  );
-}
-
-function Panel({ children }: { children: ReactNode }) {
-  return <section className="rounded-md border border-outline-ghost bg-surface-container-low p-4">{children}</section>;
-}
-
-function Drawer({ title, children, onClose }: { title: string; children: ReactNode; onClose: () => void }) {
-  return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-black/40">
-      <aside className="h-full w-full max-w-5xl overflow-auto border-l border-outline-ghost bg-surface-container-lowest p-5 shadow-xl">
-        <div className="mb-4 flex items-center gap-3">
-          <h2 className="text-xl font-bold text-on-surface">{title}</h2>
-          <button type="button" onClick={onClose} className="ml-auto btn-secondary">Close</button>
-        </div>
-        {children}
-      </aside>
-    </div>
-  );
-}
-
-function Table({ headers, rows }: { headers: string[]; rows: ReactNode[][] }) {
-  return (
-    <div className="overflow-x-auto rounded-md border border-outline-ghost">
-      <table className="min-w-full divide-y divide-outline-ghost text-left text-sm">
-        <thead className="bg-surface-container">
-          <tr>
-            {headers.map((header) => (
-              <th key={header} className="px-3 py-2 font-semibold text-on-surface">{header}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-outline-ghost bg-surface-container-lowest">
-          {rows.length === 0 ? (
-            <tr>
-              <td className="px-3 py-4 text-on-surface-variant" colSpan={headers.length}>No rows</td>
-            </tr>
-          ) : (
-            rows.map((row, index) => (
-              <tr key={index}>
-                {row.map((cell, cellIndex) => (
-                  <td key={cellIndex} className="max-w-xs truncate px-3 py-2 text-on-surface-variant">{cell}</td>
-                ))}
-              </tr>
-            ))
-          )}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-function Input({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (value: string) => void; placeholder?: string }) {
-  return (
-    <label className="block text-sm text-on-surface-variant">
-      {label}
-      <input value={value} placeholder={placeholder} onChange={(event) => onChange(event.target.value)} className="mt-1 w-full rounded-md border border-outline-ghost bg-surface-container px-2 py-1 text-on-surface outline-none focus:border-primary" />
-    </label>
-  );
-}
-
-function Checkbox({ label, checked, onChange }: { label: string; checked: boolean; onChange: (checked: boolean) => void }) {
-  return (
-    <label className="flex items-center gap-2 text-sm text-on-surface-variant">
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={(event) => onChange(event.target.checked)}
-        className="h-4 w-4 rounded border-outline-ghost bg-surface-container accent-primary"
-      />
-      <span>{label}</span>
-    </label>
-  );
-}
-
-function Select({ label, value, options, onChange }: { label: string; value: string; options: readonly string[]; onChange: (value: string) => void }) {
-  return (
-    <label className="block text-sm text-on-surface-variant">
-      {label}
-      <select value={value} onChange={(event) => onChange(event.target.value)} className="mt-1 w-full rounded-md border border-outline-ghost bg-surface-container px-2 py-1 text-on-surface outline-none focus:border-primary">
-        {options.map((option) => (
-          <option key={option || "any"} value={option}>{option || "any"}</option>
-        ))}
-      </select>
-    </label>
   );
 }
 
@@ -1220,21 +1431,21 @@ function formatFieldValue(value: unknown): string {
   return JSON.stringify(value);
 }
 
-function toAdminFilters(filters: Filters): AdminFilters {
+function toAdminFilters(filters: Filters, keys: Set<string>): AdminFilters {
   return {
     project_id: filters.projectID,
-    from: filters.from,
-    to: filters.to,
-    event_type: filters.eventType,
-    region_id: filters.regionID,
-    zone_id: filters.zoneID,
-    player_id: filters.playerID,
-    game_version: filters.gameVersion,
-    build_channel: filters.buildChannel,
-    field_key: filters.fieldKey,
-    field_value: filters.fieldValue,
-    status: filters.reportStatus,
-    label: filters.reportLabel,
+    from: keys.has("from") ? filters.from : "",
+    to: keys.has("to") ? filters.to : "",
+    event_type: keys.has("event") ? filters.eventType : "",
+    region_id: keys.has("region") ? filters.regionID : "",
+    zone_id: keys.has("zone") ? filters.zoneID : "",
+    player_id: keys.has("player") ? filters.playerID : "",
+    game_version: keys.has("version") ? filters.gameVersion : "",
+    build_channel: keys.has("channel") ? filters.buildChannel : "",
+    field_key: keys.has("field") ? filters.fieldKey : "",
+    field_value: keys.has("fieldValue") ? filters.fieldValue : "",
+    status: keys.has("reportStatus") ? filters.reportStatus : "",
+    label: keys.has("reportLabel") ? filters.reportLabel : "",
     limit: 100,
   };
 }
@@ -1342,34 +1553,21 @@ function copyPermalink() {
   void copyText(window.location.href);
 }
 
-async function copyText(value: string): Promise<boolean> {
-  if (!value) return false;
-  try {
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(value);
-      return true;
-    }
-  } catch {
-    // Fall through to the textarea fallback for local/dev browser edge cases.
-  }
-  return fallbackCopyText(value);
+function queryError(error: unknown, fallback: string): string | undefined {
+  return error ? errorMessage(error, fallback) : undefined;
 }
 
-function fallbackCopyText(value: string): boolean {
-  const textarea = document.createElement("textarea");
-  textarea.value = value;
-  textarea.setAttribute("readonly", "true");
-  textarea.style.position = "fixed";
-  textarea.style.left = "-9999px";
-  textarea.style.top = "0";
-  document.body.appendChild(textarea);
-  textarea.focus();
-  textarea.select();
-  try {
-    return document.execCommand("copy");
-  } finally {
-    document.body.removeChild(textarea);
-  }
+function isoToLocalInput(iso: string): string {
+  const parsed = Date.parse(iso);
+  if (!Number.isFinite(parsed)) return "";
+  const date = new Date(parsed);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function localInputToISO(value: string): string {
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? new Date(parsed).toISOString() : "";
 }
 
 function exportData(filename: string, rows: unknown[], format: ExportFormat, filters: AdminFilters) {
