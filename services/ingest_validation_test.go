@@ -37,10 +37,42 @@ var _ = Describe("ingest validation", func() {
 		bad := validEvent("dock")
 		bad.PlayerID = "not-a-uuid"
 
-		valid, rejected := validateEvents([]EventEnvelope{validEvent("dock"), bad})
+		valid, rejections := validateEvents([]EventEnvelope{validEvent("dock"), bad})
 
 		Expect(valid).To(HaveLen(1))
-		Expect(rejected).To(Equal(1))
+		Expect(rejections).To(HaveLen(1))
+		Expect(rejections[0].Index).To(Equal(1))
+		Expect(rejections[0].Reason).To(Equal(reasonPlayerID))
+		Expect(rejections[0].Message).To(ContainSubstring("player_id must be a UUID"))
+	})
+
+	It("maps each validation failure to a stable reason code", func() {
+		cases := map[string]func(EventEnvelope) EventEnvelope{
+			reasonSchemaVersion: func(e EventEnvelope) EventEnvelope { e.SchemaVersion = 1; return e },
+			reasonEventID:       func(e EventEnvelope) EventEnvelope { e.EventID = "not-a-uuid"; return e },
+			reasonPlayerID:      func(e EventEnvelope) EventEnvelope { e.PlayerID = "not-a-uuid"; return e },
+			reasonEventType:     func(e EventEnvelope) EventEnvelope { e.EventType = ""; return e },
+			reasonRealTS:        func(e EventEnvelope) EventEnvelope { e.RealTS = "nope"; return e },
+			reasonPosition: func(e EventEnvelope) EventEnvelope {
+				e.Context = json.RawMessage(`{"location":{"position":[1,2]}}`)
+				return e
+			},
+		}
+		for wantReason, mutate := range cases {
+			code, message := eventRejection(mutate(validEvent("dock")))
+			Expect(code).To(Equal(wantReason))
+			Expect(message).ToNot(BeEmpty())
+		}
+	})
+
+	It("accepts a valid event_id and tolerates an empty one", func() {
+		withID := validEvent("dock")
+		withID.EventID = "6f9619ff-8b86-d011-b42d-00c04fc964ff"
+		Expect(validateEvent(withID)).To(Succeed())
+
+		noID := validEvent("dock")
+		noID.EventID = ""
+		Expect(validateEvent(noID)).To(Succeed())
 	})
 
 	It("validates bug report payload mood bounds", func() {

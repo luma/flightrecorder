@@ -136,6 +136,23 @@ export interface EventTypeSummary {
   sample_payload: Record<string, unknown>;
 }
 
+export interface RejectedEventGroup {
+  event_type: string;
+  reason_code: string;
+  reason_message: string;
+  game_version: string;
+  build_channel: string;
+  event_count: number;
+  first_seen_at: string;
+  last_seen_at: string;
+  sample_event: Record<string, unknown>;
+}
+
+export interface RejectedEventsResponse {
+  groups: RejectedEventGroup[];
+  active_group_count: number;
+}
+
 export interface QueryField {
   key: string;
   source: string;
@@ -361,6 +378,14 @@ export const api = {
     ),
   eventTypes: (projectID: string) =>
     apiFetch<{ event_types: EventTypeSummary[] }>(`/event-types?project_id=${encodeURIComponent(projectID)}`),
+  rejectedEvents: (projectID: string) =>
+    apiFetch<RejectedEventsResponse>(`/rejected-events${queryString({ project_id: projectID })}`),
+  rejectedEventCount: (projectID: string) =>
+    apiFetch<{ active_group_count: number }>(`/rejected-events/count${queryString({ project_id: projectID })}`),
+  acknowledgeRejectedEvents: (projectID: string) =>
+    apiFetch<{ acknowledged: boolean }>(`/rejected-events/acknowledge${queryString({ project_id: projectID })}`, {
+      method: "POST",
+    }),
   projects: () => apiFetch<{ projects: ProjectSummary[] }>("/projects"),
   createProject: (body: CreateProjectRequest) =>
     apiFetch<SettingsResponse["project"]>("/projects", {

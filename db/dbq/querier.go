@@ -13,6 +13,8 @@ import (
 
 type Querier interface {
 	AdminAcceptInvitation(ctx context.Context, arg AdminAcceptInvitationParams) (AdminAcceptInvitationRow, error)
+	AdminAcknowledgeRejectedEvents(ctx context.Context, projectID uuid.UUID) error
+	AdminCountActiveRejectionGroups(ctx context.Context, projectID uuid.UUID) (int64, error)
 	AdminCountEnabledUsers(ctx context.Context) (int64, error)
 	AdminCountUsers(ctx context.Context) (int64, error)
 	AdminCreateIngestToken(ctx context.Context, arg AdminCreateIngestTokenParams) (AdminCreateIngestTokenRow, error)
@@ -40,6 +42,7 @@ type Querier interface {
 	AdminRefreshUserLogin(ctx context.Context, arg AdminRefreshUserLoginParams) (AdminRefreshUserLoginRow, error)
 	AdminRegionHeatmap(ctx context.Context, arg AdminRegionHeatmapParams) ([]AdminRegionHeatmapRow, error)
 	AdminRegionHeatmapByField(ctx context.Context, arg AdminRegionHeatmapByFieldParams) ([]AdminRegionHeatmapByFieldRow, error)
+	AdminRejectedEventGroups(ctx context.Context, projectID uuid.UUID) ([]AdminRejectedEventGroupsRow, error)
 	AdminReportTrace(ctx context.Context, arg AdminReportTraceParams) ([]AdminReportTraceRow, error)
 	AdminSetAgentAuthorizationEnabled(ctx context.Context, arg AdminSetAgentAuthorizationEnabledParams) (AdminSetAgentAuthorizationEnabledRow, error)
 	AdminSetIngestTokenEnabled(ctx context.Context, arg AdminSetIngestTokenEnabledParams) (AdminSetIngestTokenEnabledRow, error)
@@ -54,7 +57,9 @@ type Querier interface {
 	CreateBugReport(ctx context.Context, arg CreateBugReportParams) (CreateBugReportRow, error)
 	CreateEvent(ctx context.Context, arg CreateEventParams) (uuid.UUID, error)
 	CreateEventField(ctx context.Context, arg CreateEventFieldParams) error
+	CreateRejectedEvent(ctx context.Context, arg CreateRejectedEventParams) error
 	GetBatchByProjectAndBatchID(ctx context.Context, arg GetBatchByProjectAndBatchIDParams) (GetBatchByProjectAndBatchIDRow, error)
+	GetBugReportByProjectAndReportID(ctx context.Context, arg GetBugReportByProjectAndReportIDParams) (GetBugReportByProjectAndReportIDRow, error)
 	GetProjectByKey(ctx context.Context, projectKey string) (GetProjectByKeyRow, error)
 	GetProjectIDByTokenHash(ctx context.Context, tokenHash string) (uuid.UUID, error)
 	MCPActivateAgentAuthorization(ctx context.Context, arg MCPActivateAgentAuthorizationParams) (MCPActivateAgentAuthorizationRow, error)
@@ -68,6 +73,7 @@ type Querier interface {
 	MCPListAgentAuthorizationProjects(ctx context.Context, agentAuthorizationID uuid.UUID) ([]MCPListAgentAuthorizationProjectsRow, error)
 	MCPUpsertOAuthClient(ctx context.Context, arg MCPUpsertOAuthClientParams) (McpOauthClient, error)
 	MCPValidateAgentToken(ctx context.Context, tokenHash pgtype.Text) (MCPValidateAgentTokenRow, error)
+	PruneRejectedEvents(ctx context.Context, arg PruneRejectedEventsParams) error
 }
 
 var _ Querier = (*Queries)(nil)

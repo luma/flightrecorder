@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/rand/v2"
 	"strings"
 	"time"
 
@@ -46,14 +47,19 @@ type ClientInfo struct {
 type EventEnvelope struct {
 	Raw           json.RawMessage `json:"-"`
 	SchemaVersion int             `json:"schema_version"`
-	PlayerID      string          `json:"player_id"`
-	EventType     string          `json:"event_type"`
-	RealTS        string          `json:"real_ts"`
-	GameTime      int64           `json:"game_time"`
-	Context       json.RawMessage `json:"context"`
-	Metrics       json.RawMessage `json:"metrics"`
-	Dimensions    json.RawMessage `json:"dimensions"`
-	Payload       json.RawMessage `json:"payload"`
+	// EventID is an optional client-generated idempotency key (UUID). When set,
+	// the collector dedups on (project_id, event_id) so a resend after a lost
+	// response never creates a duplicate. Old clients omit it and fall back to
+	// batch-level dedup.
+	EventID    string          `json:"event_id"`
+	PlayerID   string          `json:"player_id"`
+	EventType  string          `json:"event_type"`
+	RealTS     string          `json:"real_ts"`
+	GameTime   int64           `json:"game_time"`
+	Context    json.RawMessage `json:"context"`
+	Metrics    json.RawMessage `json:"metrics"`
+	Dimensions json.RawMessage `json:"dimensions"`
+	Payload    json.RawMessage `json:"payload"`
 }
 
 func (e *EventEnvelope) UnmarshalJSON(data []byte) error {
@@ -105,11 +111,40 @@ type EventsRequest struct {
 }
 
 type EventsResponse struct {
-	Accepted   int32  `json:"accepted"`
-	Rejected   int32  `json:"rejected"`
-	BatchID    string `json:"batch_id"`
-	ServerTime string `json:"server_time"`
+	Accepted   int32            `json:"accepted"`
+	Rejected   int32            `json:"rejected"`
+	BatchID    string           `json:"batch_id"`
+	ServerTime string           `json:"server_time"`
+	Rejections []EventRejection `json:"rejections,omitempty"`
 }
+
+// EventRejection describes why a single event in a batch was refused. It is
+// returned only on first processing of a batch; a duplicate batch_id replay
+// returns the stored counts without this detail.
+type EventRejection struct {
+	Index   int    `json:"index"`
+	Reason  string `json:"reason"`
+	Message string `json:"message"`
+}
+
+// Stable, machine-readable rejection reason codes. validateEvent returns the
+// first failure it finds, so each rejected event carries exactly one code.
+const (
+	reasonSchemaVersion = "schema_version_unsupported"
+	reasonEventID       = "event_id_not_uuid"
+	reasonPlayerID      = "player_id_not_uuid"
+	reasonEventType     = "event_type_missing"
+	reasonRealTS        = "real_ts_invalid"
+	reasonContext       = "context_not_object"
+	reasonMetrics       = "metrics_not_object"
+	reasonDimensions    = "dimensions_not_object"
+	reasonPosition      = "position_invalid"
+	reasonPayload       = "payload_invalid"
+)
+
+// rejectedEventRetentionDays bounds how long refused events are kept for the
+// Data Quality view. Pruned opportunistically (no retention scheduler exists).
+const rejectedEventRetentionDays = 14
 
 type BugReportRequest struct {
 	ProjectID string        `json:"project_id"`
@@ -207,10 +242,11 @@ func (s *ingestService) IngestEvents(ctx context.Context, authProjectID uuid.UUI
 		return EventsResponse{}, err
 	}
 
-	validEvents, rejected := validateEvents(req.Events)
-	if len(validEvents) == 0 {
-		return EventsResponse{}, fmt.Errorf("%w: no valid events in batch", ErrBadRequest)
-	}
+	// A batch with zero valid events is no longer a hard 400. Record-level
+	// rejections are reported per-event so a schema-mismatched client cannot
+	// poison its own WAL — the batch drains and the bad events are captured in
+	// rejected_events for operator visibility.
+	validEvents, rejections := validateEvents(req.Events)
 
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
@@ -231,7 +267,7 @@ func (s *ingestService) IngestEvents(ctx context.Context, authProjectID uuid.UUI
 		ProjectID:     project.ID,
 		BatchID:       req.BatchID,
 		AcceptedCount: int32(len(validEvents)),
-		RejectedCount: int32(rejected),
+		RejectedCount: int32(len(rejections)),
 		RequestMeta:   requestMeta,
 	})
 	if err != nil {
@@ -240,6 +276,12 @@ func (s *ingestService) IngestEvents(ctx context.Context, authProjectID uuid.UUI
 
 	for _, event := range validEvents {
 		eventID, err := q.CreateEvent(ctx, createEventParams(project.ID, nullableUUID(batch.ID), req.Client, event, nil))
+		if errors.Is(err, pgx.ErrNoRows) {
+			// Duplicate client_event_id: this event was already stored on an
+			// earlier attempt whose response was lost. It still counts as
+			// accepted; skip the (already-created) field projections.
+			continue
+		}
 		if err != nil {
 			return EventsResponse{}, err
 		}
@@ -248,15 +290,31 @@ func (s *ingestService) IngestEvents(ctx context.Context, authProjectID uuid.UUI
 		}
 	}
 
+	for _, rejection := range rejections {
+		if err := createRejectedEvent(ctx, q, project.ID, batch.ID, req.Client, req.Events[rejection.Index], rejection); err != nil {
+			return EventsResponse{}, err
+		}
+	}
+
 	if err := tx.Commit(ctx); err != nil {
 		return EventsResponse{}, err
 	}
 
+	// Opportunistic, best-effort prune so a poisoned client cannot fill the DB.
+	// There is no retention scheduler; this keeps rejected_events bounded.
+	if len(rejections) > 0 && rand.IntN(100) == 0 {
+		_ = s.queries.PruneRejectedEvents(ctx, dbq.PruneRejectedEventsParams{
+			ProjectID: project.ID,
+			Days:      rejectedEventRetentionDays,
+		})
+	}
+
 	return EventsResponse{
 		Accepted:   int32(len(validEvents)),
-		Rejected:   int32(rejected),
+		Rejected:   int32(len(rejections)),
 		BatchID:    req.BatchID,
 		ServerTime: serverTime(),
+		Rejections: rejections,
 	}, nil
 }
 
@@ -276,6 +334,31 @@ func (s *ingestService) SubmitBugReport(ctx context.Context, authProjectID uuid.
 
 	project, err := s.loadAuthorizedProject(ctx, authProjectID, req.ProjectID)
 	if err != nil {
+		return BugReportResponse{}, err
+	}
+
+	// Idempotent replay: a committed report whose response was lost is resent
+	// with the same report_id. Without this, the resend hits the unique
+	// (project_id, report_id) constraint (a 500 that the client classifies as
+	// transient → permanent head-of-line block). Mirror the batch dedup and
+	// return the stored report instead.
+	existing, err := s.queries.GetBugReportByProjectAndReportID(ctx, dbq.GetBugReportByProjectAndReportIDParams{
+		ProjectID: project.ID,
+		ReportID:  req.ReportID,
+	})
+	if err == nil {
+		objectKey := ""
+		if existing.ScreenshotObjectKey.Valid {
+			objectKey = existing.ScreenshotObjectKey.String
+		}
+		return BugReportResponse{
+			Accepted:            true,
+			ReportID:            existing.ReportID,
+			ScreenshotObjectKey: objectKey,
+			ServerTime:          serverTime(),
+		}, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
 		return BugReportResponse{}, err
 	}
 
@@ -432,50 +515,66 @@ func normalizedBugReportPayload(payload json.RawMessage, screenshotObjectKey str
 	return normalized, nil
 }
 
-func validateEvents(events []EventEnvelope) ([]EventEnvelope, int) {
+func validateEvents(events []EventEnvelope) ([]EventEnvelope, []EventRejection) {
 	valid := make([]EventEnvelope, 0, len(events))
-	rejected := 0
-	for _, event := range events {
-		if err := validateEvent(event); err != nil {
-			rejected++
+	rejections := make([]EventRejection, 0)
+	for i, event := range events {
+		if code, message := eventRejection(event); code != "" {
+			rejections = append(rejections, EventRejection{Index: i, Reason: code, Message: message})
 			continue
 		}
 		valid = append(valid, event)
 	}
-	return valid, rejected
+	return valid, rejections
 }
 
-func validateEvent(event EventEnvelope) error {
+// eventRejection returns the stable reason code and human-readable message for
+// the first validation failure, or ("", "") when the event is valid. It is the
+// single source of truth for both validateEvent (error form) and validateEvents
+// (structured form).
+func eventRejection(event EventEnvelope) (code string, message string) {
 	if event.SchemaVersion != 2 {
-		return fmt.Errorf("%w: schema_version must be 2", ErrBadRequest)
+		return reasonSchemaVersion, "schema_version must be 2"
+	}
+	if strings.TrimSpace(event.EventID) != "" {
+		if _, err := uuid.Parse(event.EventID); err != nil {
+			return reasonEventID, "event_id must be a UUID"
+		}
 	}
 	if _, err := uuid.Parse(event.PlayerID); err != nil {
-		return fmt.Errorf("%w: player_id must be a UUID", ErrBadRequest)
+		return reasonPlayerID, "player_id must be a UUID"
 	}
 	if strings.TrimSpace(event.EventType) == "" {
-		return fmt.Errorf("%w: event_type is required", ErrBadRequest)
+		return reasonEventType, "event_type is required"
 	}
 	if _, err := parseTime(event.RealTS); err != nil {
-		return fmt.Errorf("%w: real_ts must be RFC3339 UTC", ErrBadRequest)
+		return reasonRealTS, "real_ts must be RFC3339 UTC"
 	}
 	if err := validateJSONObject(event.Context, "context", false); err != nil {
-		return err
+		return reasonContext, "context must be an object"
 	}
 	if err := validateJSONObject(event.Metrics, "metrics", false); err != nil {
-		return err
+		return reasonMetrics, "metrics must be an object"
 	}
 	if err := validateJSONObject(event.Dimensions, "dimensions", false); err != nil {
-		return err
+		return reasonDimensions, "dimensions must be an object"
 	}
 	location, err := eventLocation(event.Context)
 	if err != nil {
-		return err
+		return reasonContext, "context must be an object"
 	}
 	if len(location.Position) != 0 && len(location.Position) != 3 {
-		return fmt.Errorf("%w: context.location.position must contain x, y, z", ErrBadRequest)
+		return reasonPosition, "context.location.position must contain x, y, z"
 	}
 	if err := validateJSONObject(event.Payload, "payload", true); err != nil {
-		return err
+		return reasonPayload, "payload is required and must be an object"
+	}
+	return "", ""
+}
+
+func validateEvent(event EventEnvelope) error {
+	if _, message := eventRejection(event); message != "" {
+		return fmt.Errorf("%w: %s", ErrBadRequest, message)
 	}
 	return nil
 }
@@ -526,7 +625,44 @@ func createEventParams(projectID uuid.UUID, batchID pgtype.UUID, client ClientIn
 		Payload:          payload,
 		EventJson:        eventJSON,
 		ValidationErrors: errorsJSON,
+		ClientEventID:    clientEventID(event.EventID),
 	}
+}
+
+// clientEventID parses the optional client-supplied idempotency key. An empty or
+// unparseable value yields a NULL uuid, which the partial unique index ignores,
+// so old clients (no event_id) keep at-least-once batch-level semantics.
+func clientEventID(raw string) pgtype.UUID {
+	if strings.TrimSpace(raw) == "" {
+		return pgtype.UUID{}
+	}
+	id, err := uuid.Parse(raw)
+	if err != nil {
+		return pgtype.UUID{}
+	}
+	return pgtype.UUID{Bytes: id, Valid: true}
+}
+
+// createRejectedEvent persists a refused event for the Data Quality view. The
+// raw event JSON is stored verbatim; typed columns are intentionally omitted
+// because the event failed to parse into them.
+func createRejectedEvent(ctx context.Context, q *dbq.Queries, projectID uuid.UUID, batchID uuid.UUID, client ClientInfo, event EventEnvelope, rejection EventRejection) error {
+	rawEvent := event.Raw
+	if len(rawEvent) == 0 {
+		rawEvent = json.RawMessage(`{}`)
+	}
+	return q.CreateRejectedEvent(ctx, dbq.CreateRejectedEventParams{
+		ProjectID:     projectID,
+		BatchDbID:     nullableUUID(batchID),
+		EventType:     event.EventType,
+		ReasonCode:    rejection.Reason,
+		ReasonMessage: rejection.Message,
+		RawEvent:      rawEvent,
+		GameVersion:   client.GameVersion,
+		BuildChannel:  client.BuildChannel,
+		CommitSHA:     client.CommitSHA,
+		Platform:      client.Platform,
+	})
 }
 
 func createEventFieldProjections(ctx context.Context, q *dbq.Queries, projectID uuid.UUID, eventID uuid.UUID, queryFields json.RawMessage, event EventEnvelope) error {

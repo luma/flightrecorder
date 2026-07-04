@@ -83,6 +83,36 @@ func TestDecodeJSONBodyAllowsRawTelemetryKeys(t *testing.T) {
 	}
 }
 
+func TestDecodeIngestBodyToleratesUnknownTopLevelField(t *testing.T) {
+	body := `{
+		"project_id": "example",
+		"batch_id": "batch-1",
+		"future_top_level_field": "ignored by lenient ingest decoder",
+		"client": {
+			"game_version": "0.1.0",
+			"build_channel": "dev",
+			"commit_sha": "abc123",
+			"platform": "linux"
+		},
+		"events": []
+	}`
+
+	var lenient services.EventsRequest
+	if err := decodeIngestBody(requestContextWithBody(body), &lenient); err != nil {
+		t.Fatalf("expected lenient ingest decoder to tolerate unknown top-level field, got %v", err)
+	}
+	if lenient.BatchID != "batch-1" {
+		t.Fatalf("expected batch_id to decode, got %q", lenient.BatchID)
+	}
+
+	// The same unknown top-level field must still be rejected by the strict
+	// decoder used for admin/MCP routes.
+	var strict services.EventsRequest
+	if err := decodeJSONBody(requestContextWithBody(body), &strict); err == nil {
+		t.Fatal("expected strict decoder to reject unknown top-level field")
+	}
+}
+
 func requestContextWithBody(body string) *app.RequestContext {
 	ctx := &app.RequestContext{}
 	ctx.Request.SetBodyString(body)

@@ -41,6 +41,9 @@ func registerAdminRoutes(adminGroup *route.RouterGroup, adminAuth services.Admin
 	protected.GET("/reports/:report_id/screenshot", makeAdminReportScreenshot(adminSvc))
 	protected.PATCH("/reports/:report_id", makeAdminReportUpdate(adminSvc))
 	protected.GET("/event-types", makeAdminEventTypes(adminSvc))
+	protected.GET("/rejected-events", makeAdminRejectedEvents(adminSvc))
+	protected.GET("/rejected-events/count", makeAdminRejectedEventCount(adminSvc))
+	protected.POST("/rejected-events/acknowledge", makeAdminAcknowledgeRejectedEvents(adminSvc))
 	protected.GET("/projects", makeAdminProjects(adminSvc))
 	protected.POST("/projects", makeAdminCreateProject(adminSvc))
 	protected.GET("/settings", makeAdminSettings(adminSvc))
@@ -391,6 +394,38 @@ func makeAdminEventTypes(adminSvc services.Admin) app.HandlerFunc {
 			return
 		}
 		c.JSON(consts.StatusOK, map[string]any{"event_types": eventTypes})
+	}
+}
+
+func makeAdminRejectedEvents(adminSvc services.Admin) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		resp, err := adminSvc.RejectedEvents(ctx, query(c, "project_id"))
+		if err != nil {
+			writeServiceError(c, err)
+			return
+		}
+		c.JSON(consts.StatusOK, resp)
+	}
+}
+
+func makeAdminRejectedEventCount(adminSvc services.Admin) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		count, err := adminSvc.RejectedEventCount(ctx, query(c, "project_id"))
+		if err != nil {
+			writeServiceError(c, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"active_group_count": count})
+	}
+}
+
+func makeAdminAcknowledgeRejectedEvents(adminSvc services.Admin) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		if err := adminSvc.AcknowledgeRejectedEvents(ctx, query(c, "project_id")); err != nil {
+			writeServiceError(c, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"acknowledged": true})
 	}
 }
 

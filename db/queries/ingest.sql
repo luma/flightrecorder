@@ -43,11 +43,14 @@ INSERT INTO events (
     dimensions,
     payload,
     event_json,
-    validation_errors
+    validation_errors,
+    client_event_id
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-    $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21
+    $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22
 )
+ON CONFLICT (project_id, client_event_id) WHERE client_event_id IS NOT NULL
+DO NOTHING
 RETURNING id;
 
 -- name: CreateEventField :exec
@@ -90,3 +93,30 @@ INSERT INTO bug_reports (
     $1, $2, $3, $4, $5, $6, $7, $8
 )
 RETURNING id, screenshot_object_key;
+
+-- name: GetBugReportByProjectAndReportID :one
+SELECT id, report_id, screenshot_object_key
+FROM bug_reports
+WHERE project_id = $1
+  AND report_id = $2;
+
+-- name: CreateRejectedEvent :exec
+INSERT INTO rejected_events (
+    project_id,
+    batch_db_id,
+    event_type,
+    reason_code,
+    reason_message,
+    raw_event,
+    game_version,
+    build_channel,
+    commit_sha,
+    platform
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
+);
+
+-- name: PruneRejectedEvents :exec
+DELETE FROM rejected_events
+WHERE project_id = $1
+  AND created_at < now() - make_interval(days => $2);

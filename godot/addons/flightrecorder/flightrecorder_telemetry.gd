@@ -9,12 +9,30 @@ extends Node
 
 signal flush_completed(sent_records: int, remaining_records: int)
 signal send_failed(message: String)
+## Emitted after a drain moves one or more records to the quarantine file. A
+## non-zero count usually indicates a game-side code bug (wrong event shape) or a
+## payload that is permanently too large; surface it as a data-quality metric.
+signal records_quarantined(count: int)
 
 const SCHEMA_VERSION := 2
 const DEFAULT_ENDPOINT_URL := "http://localhost:8080/"
 const EVENTS_PATH := "/v1/events"
 const BUG_REPORTS_PATH := "/v1/bug-reports"
 const PROJECTS_DIR := "user://flightrecorder/projects"
+
+## Outcome of a single HTTP send, so the drain can tell a permanent record
+## rejection apart from a transient outage, a config/routing error, and an
+## oversize payload. Collapsing these into a bool is what let one bad batch
+## freeze the whole queue (see docs/plans/wal-poisoning-self-healing.md).
+enum SendResult { SUCCESS, TRANSIENT, PERMANENT, AUTH, OVERSIZE }
+
+## Terminal state of a full drain pass, used by the sender loop to decide whether
+## to back off and retry (TRANSIENT) or return to a blocking wait (everything
+## else — only a new event, flush(), or restart can change those outcomes).
+enum DrainOutcome { EMPTY, COMPLETED, TRANSIENT, AUTH }
+
+const TRANSIENT_BACKOFF_BASE_MSEC := 1000
+const TRANSIENT_BACKOFF_MAX_MSEC := 60000
 
 @export var endpoint_url := DEFAULT_ENDPOINT_URL
 @export var project_id := "sursidus"
@@ -27,6 +45,16 @@ const PROJECTS_DIR := "user://flightrecorder/projects"
 @export var batch_size := 25
 @export var use_gzip := false
 @export var report_cooldown_seconds := 60.0
+## A record failing transiently (outage) for longer than this is quarantined as
+## "stuck" so a permanent local problem cannot pin the queue forever. Default 7
+## days: long enough that a normal outage never trips it.
+@export var max_record_age_seconds := 604800
+## Optional attempt-count backstop for transient failures (0 = unlimited; age is
+## the primary bound). Only transient attempts are counted.
+@export var max_transient_attempts := 0
+## Quarantine file caps; the oldest lines are FIFO-trimmed when either is hit.
+@export var max_quarantine_records := 1000
+@export var max_quarantine_bytes := 5_242_880
 
 var player_id := ""
 
@@ -36,6 +64,20 @@ var _wake_sender := Semaphore.new()
 var _sender_thread := Thread.new()
 var _stop_sender := false
 var _last_report_msec := -1
+## Session-sticky, in-memory batch ceiling discovered from 413 responses. 0 means
+## "unshrunk" — use the configured batch_size. Never persisted: a restart
+## re-probes with one cheap 413, which self-corrects if the server raises its
+## limit.
+var _effective_batch_size := 0
+## Consecutive TRANSIENT drain count, drives exponential backoff. Reset on any
+## non-transient drain outcome.
+var _transient_streak := 0
+## Count of non-empty WAL lines the last `_read_wal` consumed. The drain releases
+## `_wal_mutex` during its blocking HTTP sends, so the game thread can append new
+## records meanwhile; the post-drain rewrite uses this to preserve those appends
+## instead of truncating them away. Only the sender thread reads/rewrites, so a
+## plain member is safe.
+var _drain_line_count := 0
 
 
 func _ready() -> void:
@@ -62,6 +104,10 @@ func configure(options: Dictionary) -> void:
 	opt_in_enabled = bool(options.get("opt_in_enabled", opt_in_enabled))
 	batch_size = max(1, int(options.get("batch_size", batch_size)))
 	use_gzip = bool(options.get("use_gzip", use_gzip))
+	max_record_age_seconds = int(options.get("max_record_age_seconds", max_record_age_seconds))
+	max_transient_attempts = int(options.get("max_transient_attempts", max_transient_attempts))
+	max_quarantine_records = int(options.get("max_quarantine_records", max_quarantine_records))
+	max_quarantine_bytes = int(options.get("max_quarantine_bytes", max_quarantine_bytes))
 	if project_id != previous_project_id or player_id == "":
 		player_id = _load_or_create_player_id()
 
@@ -85,6 +131,13 @@ func record_event(event_type: String, payload: Dictionary = { }, context: Dictio
 		{
 			"kind": "event",
 			"event": event,
+			# event_id is the idempotency key: minted once here and persisted, so
+			# a resend after a lost response never creates a duplicate on the
+			# server (which dedups on (project_id, event_id)). attempts /
+			# first_attempt_ts back the transient age/attempt backstop.
+			"event_id": _uuid_v4(),
+			"attempts": 0,
+			"first_attempt_ts": null,
 		},
 	)
 	_wake_sender.post()
@@ -130,6 +183,11 @@ func submit_bug_report(
 		{
 			"kind": "bug_report",
 			"body": body,
+			# report_id (inside body) is the server-side idempotency key for the
+			# report; event_id gives the underlying event the same guarantee.
+			"event_id": _uuid_v4(),
+			"attempts": 0,
+			"first_attempt_ts": null,
 		},
 	)
 	_wake_sender.post()
@@ -202,7 +260,7 @@ func _sender_loop() -> void:
 		_wake_sender.wait()
 		if _should_stop_sender():
 			return
-		_drain_wal()
+		_run_drain_cycle()
 
 
 func _should_stop_sender() -> bool:
@@ -212,75 +270,173 @@ func _should_stop_sender() -> bool:
 	return should_stop
 
 
-func _drain_wal() -> void:
-	if ingest_token.strip_edges() == "":
+## Drives repeated drains with transient backoff. A TRANSIENT drain does not
+## return to the blocking wait (Semaphore has no timed wait, so an idle outage
+## would never retry until a new event arrived); it sleeps a bounded, jittered
+## interval and re-drains. Every other outcome returns to wait() — only a new
+## event, flush(), or restart can change them.
+func _run_drain_cycle() -> void:
+	while true:
+		if _should_stop_sender():
+			return
+		var outcome := _drain_wal()
+		if outcome == DrainOutcome.TRANSIENT:
+			_transient_streak += 1
+			if not _sleep_backoff(_transient_streak):
+				return
+			continue
+		_transient_streak = 0
 		return
+
+
+## Sleeps the backoff interval for the given streak in short, stop-checked steps.
+## Returns false if a stop was requested mid-sleep.
+func _sleep_backoff(streak: int) -> bool:
+	var shift := mini(streak - 1, 6)
+	var base := mini(TRANSIENT_BACKOFF_BASE_MSEC << shift, TRANSIENT_BACKOFF_MAX_MSEC)
+	var jitter := float(base) * 0.2
+	var delay_msec := int(maxf(0.0, float(base) + randf_range(-jitter, jitter)))
+	var waited := 0
+	while waited < delay_msec:
+		if _should_stop_sender():
+			return false
+		OS.delay_msec(50)
+		waited += 50
+	return true
+
+
+## Drains the WAL once, in order, without head-of-line blocking:
+## SUCCESS drops the batch; PERMANENT quarantines the offending records and keeps
+## going; OVERSIZE shrinks the batch (quarantining a lone record that still 413s);
+## TRANSIENT stops and keeps the remainder (aging out records stuck too long);
+## AUTH stops and keeps everything (a config change is required).
+func _drain_wal() -> int:
+	if ingest_token.strip_edges() == "":
+		return DrainOutcome.AUTH
 
 	var records := _read_wal()
 	if records.is_empty():
-		return
+		return DrainOutcome.EMPTY
 
 	var remaining: Array[Dictionary] = []
-	var pending_event_records: Array[Dictionary] = []
-	var pending_events: Array[Dictionary] = []
+	var quarantined: Array[Dictionary] = []
 	var sent_count := 0
-	var failed := false
+	var outcome := DrainOutcome.COMPLETED
+	var stopped := false
+	var index := 0
 
-	for index in range(records.size()):
+	while index < records.size():
 		var record := records[index]
+		if stopped:
+			remaining.append(record)
+			index += 1
+			continue
+
 		var kind := str(record.get("kind", ""))
-
 		if kind == "event":
-			pending_event_records.append(record)
-			pending_events.append(record.get("event", { }))
-			if pending_events.size() >= batch_size:
-				if _send_event_batch(pending_events):
-					sent_count += pending_event_records.size()
-					pending_event_records.clear()
-					pending_events.clear()
-				else:
-					remaining.append_array(pending_event_records)
-					remaining.append_array(records.slice(index + 1))
-					failed = true
-					break
+			var effective := _current_effective_batch_size()
+			var group: Array[Dictionary] = []
+			var scan := index
+			while scan < records.size() and str(records[scan].get("kind", "")) == "event" and group.size() < effective:
+				group.append(records[scan])
+				scan += 1
+
+			var events: Array[Dictionary] = []
+			for group_record in group:
+				events.append(group_record.get("event", { }))
+			var result := _send_event_batch(events, group)
+
+			match result:
+				SendResult.SUCCESS:
+					sent_count += group.size()
+					index = scan
+				SendResult.PERMANENT:
+					for group_record in group:
+						quarantined.append(_quarantine_entry(group_record, "permanent"))
+					index = scan
+				SendResult.OVERSIZE:
+					if group.size() <= 1:
+						# Cannot shrink further: a single record that still 413s
+						# can never fit. Quarantine it so it can't block the drain.
+						if group.size() == 1:
+							quarantined.append(_quarantine_entry(group[0], "oversize"))
+						index += 1
+					else:
+						# Shrink and retry the same records with a smaller batch;
+						# do not advance the index.
+						_shrink_effective_batch_size()
+				SendResult.TRANSIENT:
+					for group_record in group:
+						_bump_transient(group_record)
+					for group_record in group:
+						if _is_stuck(group_record):
+							quarantined.append(_quarantine_entry(group_record, "stuck"))
+						else:
+							remaining.append(group_record)
+					stopped = true
+					outcome = DrainOutcome.TRANSIENT
+					index = scan
+				SendResult.AUTH:
+					remaining.append_array(group)
+					stopped = true
+					outcome = DrainOutcome.AUTH
+					index = scan
 		elif kind == "bug_report":
-			if not pending_events.is_empty():
-				if _send_event_batch(pending_events):
-					sent_count += pending_event_records.size()
-					pending_event_records.clear()
-					pending_events.clear()
-				else:
-					remaining.append_array(pending_event_records)
-					remaining.append_array(records.slice(index))
-					failed = true
-					break
-
-			if _post_json(BUG_REPORTS_PATH, _bug_report_body_for_transport(record.get("body", { }))):
-				sent_count += 1
-			else:
-				remaining.append(record)
-				remaining.append_array(records.slice(index + 1))
-				failed = true
-				break
+			var body := _bug_report_body_for_transport(record.get("body", { }), str(record.get("event_id", "")))
+			var result := _post_json(BUG_REPORTS_PATH, body)
+			match result:
+				SendResult.SUCCESS:
+					sent_count += 1
+					index += 1
+				SendResult.PERMANENT:
+					quarantined.append(_quarantine_entry(record, "permanent"))
+					index += 1
+				SendResult.OVERSIZE:
+					# A single report that is too large can never be sent.
+					quarantined.append(_quarantine_entry(record, "oversize"))
+					index += 1
+				SendResult.TRANSIENT:
+					_bump_transient(record)
+					if _is_stuck(record):
+						quarantined.append(_quarantine_entry(record, "stuck"))
+					else:
+						remaining.append(record)
+					stopped = true
+					outcome = DrainOutcome.TRANSIENT
+					index += 1
+				SendResult.AUTH:
+					remaining.append(record)
+					stopped = true
+					outcome = DrainOutcome.AUTH
+					index += 1
 		else:
+			# Unknown record kind: drop it (as the original drain did) so a
+			# malformed WAL line can't wedge the queue.
 			sent_count += 1
+			index += 1
 
-	if not failed and not pending_events.is_empty():
-		if _send_event_batch(pending_events):
-			sent_count += pending_event_records.size()
-		else:
-			remaining.append_array(pending_event_records)
+	if not quarantined.is_empty():
+		_append_quarantine(quarantined)
+	_rewrite_wal(remaining, _drain_line_count)
 
-	_rewrite_wal(remaining)
 	call_deferred("_emit_flush_completed", sent_count, remaining.size())
+	if not quarantined.is_empty():
+		call_deferred("_emit_records_quarantined", quarantined.size())
+
+	if outcome == DrainOutcome.COMPLETED and remaining.is_empty():
+		return DrainOutcome.EMPTY
+	return outcome
 
 
-func _send_event_batch(events: Array[Dictionary]) -> bool:
+func _send_event_batch(events: Array[Dictionary], records: Array[Dictionary] = []) -> int:
 	if events.is_empty():
-		return true
+		return SendResult.SUCCESS
 	var normalized_events: Array[Dictionary] = []
-	for event in events:
-		normalized_events.append(_event_for_transport(event))
+	for i in range(events.size()):
+		var event_id := ""
+		if i < records.size():
+			event_id = str(records[i].get("event_id", ""))
+		normalized_events.append(_event_for_transport(events[i], event_id))
 	var body := {
 		"project_id": project_id,
 		"batch_id": _uuid_v4(),
@@ -291,10 +447,10 @@ func _send_event_batch(events: Array[Dictionary]) -> bool:
 	return _post_json(EVENTS_PATH, body)
 
 
-func _bug_report_body_for_transport(body: Dictionary) -> Dictionary:
+func _bug_report_body_for_transport(body: Dictionary, event_id: String = "") -> Dictionary:
 	var output := body.duplicate(true)
 	if output.get("event") is Dictionary:
-		output["event"] = _event_for_transport(output["event"])
+		output["event"] = _event_for_transport(output["event"], event_id)
 		var event: Dictionary = output["event"]
 		if event.get("payload") is Dictionary:
 			var payload: Dictionary = event["payload"].duplicate(true)
@@ -304,19 +460,25 @@ func _bug_report_body_for_transport(body: Dictionary) -> Dictionary:
 	return output
 
 
-func _event_for_transport(event: Dictionary) -> Dictionary:
+func _event_for_transport(event: Dictionary, event_id: String = "") -> Dictionary:
 	var output := event.duplicate(true)
 	output["schema_version"] = int(output.get("schema_version", SCHEMA_VERSION))
 	output["game_time"] = int(output.get("game_time", 0))
+	# event_id rides inside the event envelope. The server's custom envelope
+	# unmarshaller tolerates it even on older, strict builds (it falls back to
+	# batch-level dedup), so sending it is always safe.
+	if event_id != "":
+		output["event_id"] = event_id
 	return output
 
 
-func _post_json(route_path: String, body: Dictionary) -> bool:
+func _post_json(route_path: String, body: Dictionary) -> int:
 	var url := _join_url(endpoint_url, route_path)
 	var parsed := _parse_url(url)
 	if parsed.is_empty():
+		# A malformed endpoint_url is a config error, not a record problem.
 		_report_send_failed("invalid endpoint: %s" % url)
-		return false
+		return SendResult.AUTH
 
 	var client := HTTPClient.new()
 	var tls_options: TLSOptions = null
@@ -326,7 +488,7 @@ func _post_json(route_path: String, body: Dictionary) -> bool:
 	var err := client.connect_to_host(parsed["host"], parsed["port"], tls_options)
 	if err != OK:
 		_report_send_failed("connect failed: %s" % error_string(err))
-		return false
+		return SendResult.TRANSIENT
 
 	while client.get_status() in [HTTPClient.STATUS_RESOLVING, HTTPClient.STATUS_CONNECTING]:
 		client.poll()
@@ -334,7 +496,7 @@ func _post_json(route_path: String, body: Dictionary) -> bool:
 
 	if client.get_status() != HTTPClient.STATUS_CONNECTED:
 		_report_send_failed("connect failed with status %s" % client.get_status())
-		return false
+		return SendResult.TRANSIENT
 
 	var json := JSON.stringify(body)
 	var body_bytes := json.to_utf8_buffer()
@@ -352,22 +514,67 @@ func _post_json(route_path: String, body: Dictionary) -> bool:
 	err = client.request_raw(HTTPClient.METHOD_POST, parsed["request_path"], headers, body_bytes)
 	if err != OK:
 		_report_send_failed("request failed: %s" % error_string(err))
-		return false
+		return SendResult.TRANSIENT
 
 	while client.get_status() == HTTPClient.STATUS_REQUESTING:
 		client.poll()
 		OS.delay_msec(20)
 
+	var response_body := PackedByteArray()
 	while client.get_status() == HTTPClient.STATUS_BODY:
 		client.poll()
-		client.read_response_body_chunk()
+		var chunk := client.read_response_body_chunk()
+		if chunk.size() > 0:
+			response_body.append_array(chunk)
 		OS.delay_msec(10)
 
-	var response_code := client.get_response_code()
-	if response_code < 200 or response_code >= 300:
-		_report_send_failed("collector returned HTTP %s" % response_code)
+	return _classify_response(client.get_response_code(), response_body)
+
+
+## Maps an HTTP response to a SendResult. A permanent record rejection is only
+## inferred from a 400/422 that carries the collector's own {"error": …} body;
+## any other 4xx (including 404/405 routing errors and proxy-generated 400s) is
+## treated as a fixable config problem (AUTH), never as a reason to drop data.
+func _classify_response(code: int, response_body: PackedByteArray) -> int:
+	# A dropped/half-open connection yields no HTTP status (code 0). That is a
+	# transient transport failure, not a config error — retry with backoff.
+	if code < 100:
+		_report_send_failed("collector connection dropped before response")
+		return SendResult.TRANSIENT
+	if code >= 200 and code < 300:
+		return SendResult.SUCCESS
+	if code == 413:
+		return SendResult.OVERSIZE
+	if code == 408 or code == 425 or code == 429 or code >= 500:
+		_report_send_failed("collector transient error HTTP %s" % code)
+		return SendResult.TRANSIENT
+	if code == 401 or code == 403 or code == 404 or code == 405:
+		_report_send_failed("collector rejected request (auth/endpoint) HTTP %s" % code)
+		return SendResult.AUTH
+	if code == 400 or code == 422:
+		if _is_collector_error_body(response_body):
+			return SendResult.PERMANENT
+		_report_send_failed("collector returned HTTP %s (non-collector body)" % code)
+		return SendResult.AUTH
+	# Any other status: treat conservatively as config/routing, keep the data.
+	_report_send_failed("collector returned HTTP %s" % code)
+	return SendResult.AUTH
+
+
+func _is_collector_error_body(response_body: PackedByteArray) -> bool:
+	if response_body.is_empty():
 		return false
-	return true
+	var text := response_body.get_string_from_utf8().strip_edges()
+	# Cheap guard so a non-JSON proxy/CDN body (e.g. an HTML error page) never
+	# reaches the parser. Use the JSON instance parser, which reports failure via
+	# a return code instead of pushing an engine error to the log.
+	if not text.begins_with("{"):
+		return false
+	var json := JSON.new()
+	if json.parse(text) != OK:
+		return false
+	var data = json.get_data()
+	return data is Dictionary and data.has("error")
 
 
 func _report_send_failed(message: String) -> void:
@@ -380,6 +587,126 @@ func _emit_send_failed(message: String) -> void:
 
 func _emit_flush_completed(sent_records: int, remaining_records: int) -> void:
 	flush_completed.emit(sent_records, remaining_records)
+
+
+func _emit_records_quarantined(count: int) -> void:
+	records_quarantined.emit(count)
+
+
+## Returns the batch ceiling to use right now: the configured batch_size unless a
+## 413 has shrunk it this session.
+func _current_effective_batch_size() -> int:
+	var configured := maxi(1, batch_size)
+	if _effective_batch_size <= 0 or _effective_batch_size > configured:
+		return configured
+	return _effective_batch_size
+
+
+## Halves the effective batch size (floor 1) after a 413 and reports it so the
+## integrator can lower batch_size at the source.
+func _shrink_effective_batch_size() -> void:
+	var current := _current_effective_batch_size()
+	_effective_batch_size = maxi(1, current / 2)
+	_report_send_failed("batch too large; reduced batch size to %d" % _effective_batch_size)
+
+
+## Records a transient failure on a WAL record: increments attempts and stamps
+## first_attempt_ts once, so the age backstop measures time since the first real
+## send attempt (not time on disk).
+func _bump_transient(record: Dictionary) -> void:
+	record["attempts"] = int(record.get("attempts", 0)) + 1
+	if record.get("first_attempt_ts", null) == null:
+		record["first_attempt_ts"] = int(_unix_now())
+
+
+## True when a record has been failing transiently long enough (or, if enabled,
+## often enough) that it should be given up on rather than block the queue.
+func _is_stuck(record: Dictionary) -> bool:
+	var first_attempt = record.get("first_attempt_ts", null)
+	if first_attempt != null and max_record_age_seconds > 0:
+		if _unix_now() - float(first_attempt) >= float(max_record_age_seconds):
+			return true
+	if max_transient_attempts > 0 and int(record.get("attempts", 0)) > max_transient_attempts:
+		return true
+	return false
+
+
+## Wraps a record for the quarantine file: the verbatim record plus the reason it
+## was given up on and its attempt count.
+func _quarantine_entry(record: Dictionary, reason: String) -> Dictionary:
+	var entry := record.duplicate(true)
+	entry["quarantined_at"] = _utc_now()
+	entry["reason"] = reason
+	entry["attempts"] = int(record.get("attempts", 0))
+	return entry
+
+
+func _append_quarantine(entries: Array[Dictionary]) -> void:
+	if entries.is_empty():
+		return
+	_wal_mutex.lock()
+	_ensure_project_dir()
+	var quarantine_path := _quarantine_path()
+	var file := FileAccess.open(quarantine_path, FileAccess.READ_WRITE)
+	if file == null:
+		file = FileAccess.open(quarantine_path, FileAccess.WRITE)
+	else:
+		file.seek_end()
+	if file != null:
+		for entry in entries:
+			file.store_line(JSON.stringify(entry))
+		file.flush()
+		file.close()
+	_wal_mutex.unlock()
+	_trim_quarantine()
+
+
+## FIFO-trims the quarantine file to both the record and byte caps. The file
+## lives on a player machine and a fully poisoned client can grow it fast.
+func _trim_quarantine() -> void:
+	_wal_mutex.lock()
+	var quarantine_path := _quarantine_path()
+	if not FileAccess.file_exists(quarantine_path):
+		_wal_mutex.unlock()
+		return
+	var read_file := FileAccess.open(quarantine_path, FileAccess.READ)
+	if read_file == null:
+		_wal_mutex.unlock()
+		return
+	var lines: Array[String] = []
+	var total_bytes := 0
+	while not read_file.eof_reached():
+		var line := read_file.get_line().strip_edges()
+		if line == "":
+			continue
+		lines.append(line)
+		total_bytes += _line_byte_size(line)
+	read_file.close()
+
+	var trimmed := false
+	while lines.size() > max_quarantine_records and lines.size() > 0:
+		var dropped: String = lines.pop_front()
+		total_bytes -= _line_byte_size(dropped)
+		trimmed = true
+	while total_bytes > max_quarantine_bytes and lines.size() > 1:
+		var dropped: String = lines.pop_front()
+		total_bytes -= _line_byte_size(dropped)
+		trimmed = true
+
+	if trimmed:
+		var write_file := FileAccess.open(quarantine_path, FileAccess.WRITE)
+		if write_file != null:
+			for line in lines:
+				write_file.store_line(line)
+			write_file.flush()
+			write_file.close()
+	_wal_mutex.unlock()
+
+
+## UTF-8 byte size of a stored line (payloads may be non-ASCII), plus one for the
+## trailing newline, so the byte cap is measured in real bytes not code points.
+func _line_byte_size(line: String) -> int:
+	return line.to_utf8_buffer().size() + 1
 
 
 func _append_wal(record: Dictionary) -> void:
@@ -400,33 +727,76 @@ func _append_wal(record: Dictionary) -> void:
 func _read_wal() -> Array[Dictionary]:
 	var records: Array[Dictionary] = []
 	_wal_mutex.lock()
+	var line_count := 0
 	var wal_path := _wal_path()
 	if not FileAccess.file_exists(wal_path):
+		_drain_line_count = 0
 		_wal_mutex.unlock()
 		return records
 	var file := FileAccess.open(wal_path, FileAccess.READ)
 	if file == null:
+		_drain_line_count = 0
 		_wal_mutex.unlock()
 		return records
 	while not file.eof_reached():
 		var line := file.get_line().strip_edges()
 		if line == "":
 			continue
+		# Count every non-empty line, including ones that fail to parse (they are
+		# dropped from records but still occupy a line), so the tail-preserving
+		# rewrite lines up with the raw file.
+		line_count += 1
 		var parsed = JSON.parse_string(line)
 		if typeof(parsed) == TYPE_DICTIONARY:
-			records.append(parsed)
+			records.append(_normalize_wal_record(parsed))
+	_drain_line_count = line_count
 	_wal_mutex.unlock()
 	return records
 
 
-func _rewrite_wal(records: Array[Dictionary]) -> void:
+## Defaults the retry-metadata fields so old WAL files (written before this
+## format) load and drain without error. event_id is left empty for legacy
+## records, which keeps them on at-least-once batch-level dedup.
+func _normalize_wal_record(record: Dictionary) -> Dictionary:
+	if not record.has("attempts"):
+		record["attempts"] = 0
+	if not record.has("first_attempt_ts"):
+		record["first_attempt_ts"] = null
+	if not record.has("event_id"):
+		record["event_id"] = ""
+	return record
+
+
+## Rewrites the WAL after a drain. `remaining` is the drained snapshot's kept
+## records; `consumed_lines` is how many non-empty lines that snapshot read. The
+## game thread may have appended new records during the drain's unmutexed HTTP
+## sends, so we re-read under the lock and keep every line beyond `consumed_lines`
+## verbatim — otherwise the truncating rewrite would silently drop them.
+func _rewrite_wal(remaining: Array[Dictionary], consumed_lines: int) -> void:
 	_wal_mutex.lock()
 	_ensure_project_dir()
-	var file := FileAccess.open(_wal_path(), FileAccess.WRITE)
+	var wal_path := _wal_path()
+	var tail: Array[String] = []
+	if FileAccess.file_exists(wal_path):
+		var read_file := FileAccess.open(wal_path, FileAccess.READ)
+		if read_file != null:
+			var index := 0
+			while not read_file.eof_reached():
+				var line := read_file.get_line().strip_edges()
+				if line == "":
+					continue
+				if index >= consumed_lines:
+					tail.append(line)
+				index += 1
+			read_file.close()
+	var file := FileAccess.open(wal_path, FileAccess.WRITE)
 	if file != null:
-		for record in records:
+		for record in remaining:
 			file.store_line(JSON.stringify(record))
+		for line in tail:
+			file.store_line(line)
 		file.flush()
+		file.close()
 	_wal_mutex.unlock()
 
 
@@ -440,6 +810,10 @@ func _project_dir() -> String:
 
 func _wal_path() -> String:
 	return "%s/wal.ndjson" % _project_dir()
+
+
+func _quarantine_path() -> String:
+	return "%s/wal.quarantine.ndjson" % _project_dir()
 
 
 func _player_id_path() -> String:
@@ -542,6 +916,10 @@ func _coordinates_from_context(context: Dictionary) -> Array[float]:
 
 func _utc_now() -> String:
 	return "%sZ" % Time.get_datetime_string_from_system(true)
+
+
+func _unix_now() -> float:
+	return Time.get_unix_time_from_system()
 
 
 func _join_url(base_url: String, route_path: String) -> String:

@@ -19,7 +19,7 @@ import (
 func makeHandleEvents(ingest services.Ingest) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
 		var req services.EventsRequest
-		if err := decodeJSONBody(c, &req); err != nil {
+		if err := decodeIngestBody(c, &req); err != nil {
 			writeServiceError(c, fmt.Errorf("%w: %v", services.ErrBadRequest, err))
 			return
 		}
@@ -36,7 +36,7 @@ func makeHandleEvents(ingest services.Ingest) app.HandlerFunc {
 func makeHandleBugReports(ingest services.Ingest) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
 		var req services.BugReportRequest
-		if err := decodeJSONBody(c, &req); err != nil {
+		if err := decodeIngestBody(c, &req); err != nil {
 			writeServiceError(c, fmt.Errorf("%w: %v", services.ErrBadRequest, err))
 			return
 		}
@@ -50,7 +50,23 @@ func makeHandleBugReports(ingest services.Ingest) app.HandlerFunc {
 	}
 }
 
+// decodeJSONBody decodes a single JSON object with strict unknown-field
+// rejection. Used by the admin and MCP APIs, whose clients are few and
+// updatable, so an unknown field is a useful early typo signal.
 func decodeJSONBody(c *app.RequestContext, out any) error {
+	return decodeBody(c, out, true)
+}
+
+// decodeIngestBody decodes a single JSON object leniently (unknown top-level
+// fields are ignored). Used by the ingestion API: game clients are many and
+// unpatchable, and a strict unknown-field 400 rejects the whole batch — a poison
+// of the same class as the incident this addresses. Per-event validation plus
+// the rejections response provide better, non-blocking feedback instead.
+func decodeIngestBody(c *app.RequestContext, out any) error {
+	return decodeBody(c, out, false)
+}
+
+func decodeBody(c *app.RequestContext, out any, disallowUnknownFields bool) error {
 	body := c.Request.Body()
 	if strings.EqualFold(string(c.GetHeader("Content-Encoding")), "gzip") {
 		reader, err := gzip.NewReader(bytes.NewReader(body))
@@ -66,7 +82,9 @@ func decodeJSONBody(c *app.RequestContext, out any) error {
 	}
 
 	decoder := json.NewDecoder(bytes.NewReader(body))
-	decoder.DisallowUnknownFields()
+	if disallowUnknownFields {
+		decoder.DisallowUnknownFields()
+	}
 	if err := decoder.Decode(out); err != nil {
 		return fmt.Errorf("decode JSON body: %w", err)
 	}

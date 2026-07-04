@@ -146,11 +146,14 @@ INSERT INTO events (
     dimensions,
     payload,
     event_json,
-    validation_errors
+    validation_errors,
+    client_event_id
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-    $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21
+    $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22
 )
+ON CONFLICT (project_id, client_event_id) WHERE client_event_id IS NOT NULL
+DO NOTHING
 RETURNING id
 `
 
@@ -176,6 +179,7 @@ type CreateEventParams struct {
 	Payload          json.RawMessage `json:"payload"`
 	EventJson        json.RawMessage `json:"event_json"`
 	ValidationErrors json.RawMessage `json:"validation_errors"`
+	ClientEventID    pgtype.UUID     `json:"client_event_id"`
 }
 
 func (q *Queries) CreateEvent(ctx context.Context, arg CreateEventParams) (uuid.UUID, error) {
@@ -201,6 +205,7 @@ func (q *Queries) CreateEvent(ctx context.Context, arg CreateEventParams) (uuid.
 		arg.Payload,
 		arg.EventJson,
 		arg.ValidationErrors,
+		arg.ClientEventID,
 	)
 	var id uuid.UUID
 	err := row.Scan(&id)
@@ -249,6 +254,52 @@ func (q *Queries) CreateEventField(ctx context.Context, arg CreateEventFieldPara
 	return err
 }
 
+const createRejectedEvent = `-- name: CreateRejectedEvent :exec
+INSERT INTO rejected_events (
+    project_id,
+    batch_db_id,
+    event_type,
+    reason_code,
+    reason_message,
+    raw_event,
+    game_version,
+    build_channel,
+    commit_sha,
+    platform
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
+)
+`
+
+type CreateRejectedEventParams struct {
+	ProjectID     uuid.UUID       `json:"project_id"`
+	BatchDbID     pgtype.UUID     `json:"batch_db_id"`
+	EventType     string          `json:"event_type"`
+	ReasonCode    string          `json:"reason_code"`
+	ReasonMessage string          `json:"reason_message"`
+	RawEvent      json.RawMessage `json:"raw_event"`
+	GameVersion   string          `json:"game_version"`
+	BuildChannel  string          `json:"build_channel"`
+	CommitSHA     string          `json:"commit_sha"`
+	Platform      string          `json:"platform"`
+}
+
+func (q *Queries) CreateRejectedEvent(ctx context.Context, arg CreateRejectedEventParams) error {
+	_, err := q.db.Exec(ctx, createRejectedEvent,
+		arg.ProjectID,
+		arg.BatchDbID,
+		arg.EventType,
+		arg.ReasonCode,
+		arg.ReasonMessage,
+		arg.RawEvent,
+		arg.GameVersion,
+		arg.BuildChannel,
+		arg.CommitSHA,
+		arg.Platform,
+	)
+	return err
+}
+
 const getBatchByProjectAndBatchID = `-- name: GetBatchByProjectAndBatchID :one
 SELECT id, accepted_count, rejected_count
 FROM batches
@@ -271,6 +322,31 @@ func (q *Queries) GetBatchByProjectAndBatchID(ctx context.Context, arg GetBatchB
 	row := q.db.QueryRow(ctx, getBatchByProjectAndBatchID, arg.ProjectID, arg.BatchID)
 	var i GetBatchByProjectAndBatchIDRow
 	err := row.Scan(&i.ID, &i.AcceptedCount, &i.RejectedCount)
+	return i, err
+}
+
+const getBugReportByProjectAndReportID = `-- name: GetBugReportByProjectAndReportID :one
+SELECT id, report_id, screenshot_object_key
+FROM bug_reports
+WHERE project_id = $1
+  AND report_id = $2
+`
+
+type GetBugReportByProjectAndReportIDParams struct {
+	ProjectID uuid.UUID `json:"project_id"`
+	ReportID  string    `json:"report_id"`
+}
+
+type GetBugReportByProjectAndReportIDRow struct {
+	ID                  uuid.UUID   `json:"id"`
+	ReportID            string      `json:"report_id"`
+	ScreenshotObjectKey pgtype.Text `json:"screenshot_object_key"`
+}
+
+func (q *Queries) GetBugReportByProjectAndReportID(ctx context.Context, arg GetBugReportByProjectAndReportIDParams) (GetBugReportByProjectAndReportIDRow, error) {
+	row := q.db.QueryRow(ctx, getBugReportByProjectAndReportID, arg.ProjectID, arg.ReportID)
+	var i GetBugReportByProjectAndReportIDRow
+	err := row.Scan(&i.ID, &i.ReportID, &i.ScreenshotObjectKey)
 	return i, err
 }
 
@@ -301,4 +377,20 @@ func (q *Queries) GetProjectByKey(ctx context.Context, projectKey string) (GetPr
 		&i.Funnels,
 	)
 	return i, err
+}
+
+const pruneRejectedEvents = `-- name: PruneRejectedEvents :exec
+DELETE FROM rejected_events
+WHERE project_id = $1
+  AND created_at < now() - make_interval(days => $2)
+`
+
+type PruneRejectedEventsParams struct {
+	ProjectID uuid.UUID `json:"project_id"`
+	Days      int32     `json:"days"`
+}
+
+func (q *Queries) PruneRejectedEvents(ctx context.Context, arg PruneRejectedEventsParams) error {
+	_, err := q.db.Exec(ctx, pruneRejectedEvents, arg.ProjectID, arg.Days)
+	return err
 }

@@ -109,6 +109,7 @@ type Event struct {
 	ValidationErrors json.RawMessage `json:"validation_errors"`
 	CreatedAt        time.Time       `json:"created_at"`
 	CommitSHA        string          `json:"commit_sha"`
+	ClientEventID    pgtype.UUID     `json:"client_event_id"`
 }
 
 type EventField struct {
@@ -171,6 +172,26 @@ type Project struct {
 	Funnels         json.RawMessage `json:"funnels"`
 	CreatedAt       time.Time       `json:"created_at"`
 	UpdatedAt       time.Time       `json:"updated_at"`
+}
+
+type ProjectRejectionAck struct {
+	ProjectID      uuid.UUID `json:"project_id"`
+	AcknowledgedAt time.Time `json:"acknowledged_at"`
+}
+
+type RejectedEvent struct {
+	ID            uuid.UUID       `json:"id"`
+	ProjectID     uuid.UUID       `json:"project_id"`
+	BatchDbID     pgtype.UUID     `json:"batch_db_id"`
+	EventType     string          `json:"event_type"`
+	ReasonCode    string          `json:"reason_code"`
+	ReasonMessage string          `json:"reason_message"`
+	RawEvent      json.RawMessage `json:"raw_event"`
+	GameVersion   string          `json:"game_version"`
+	BuildChannel  string          `json:"build_channel"`
+	CommitSHA     string          `json:"commit_sha"`
+	Platform      string          `json:"platform"`
+	CreatedAt     time.Time       `json:"created_at"`
 }
 
 type ReportNote struct {

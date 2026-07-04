@@ -926,3 +926,47 @@ RETURNING
     accepted_at,
     deleted_at,
     created_at;
+
+-- name: AdminRejectedEventGroups :many
+SELECT
+    re.event_type,
+    re.reason_code,
+    re.reason_message,
+    re.game_version,
+    re.build_channel,
+    count(*)::bigint AS event_count,
+    min(re.created_at)::timestamptz AS first_seen_at,
+    max(re.created_at)::timestamptz AS last_seen_at,
+    (
+        SELECT sample.raw_event
+        FROM rejected_events sample
+        WHERE sample.project_id = re.project_id
+          AND sample.event_type = re.event_type
+          AND sample.reason_code = re.reason_code
+          AND sample.game_version = re.game_version
+        ORDER BY sample.created_at DESC
+        LIMIT 1
+    ) AS sample_event
+FROM rejected_events re
+WHERE re.project_id = $1
+GROUP BY re.project_id, re.event_type, re.reason_code, re.reason_message, re.game_version, re.build_channel
+ORDER BY last_seen_at DESC;
+
+-- name: AdminCountActiveRejectionGroups :one
+SELECT count(*)::bigint
+FROM (
+    SELECT re.event_type, re.reason_code, re.game_version
+    FROM rejected_events re
+    WHERE re.project_id = $1
+    GROUP BY re.event_type, re.reason_code, re.game_version
+    HAVING max(re.created_at) >= now() - interval '24 hours'
+       AND max(re.created_at) > COALESCE(
+            (SELECT acknowledged_at FROM project_rejection_acks WHERE project_id = $1),
+            'epoch'::timestamptz
+       )
+) active_groups;
+
+-- name: AdminAcknowledgeRejectedEvents :exec
+INSERT INTO project_rejection_acks (project_id, acknowledged_at)
+VALUES ($1, now())
+ON CONFLICT (project_id) DO UPDATE SET acknowledged_at = now();

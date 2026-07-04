@@ -1,7 +1,11 @@
 import { Link, NavLink, Outlet } from "react-router-dom";
-import { useRef, useState } from "react";
+import { useRef, useState, type ReactNode } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "../auth/AuthContext";
 import { useDismiss } from "../hooks/useDismiss";
+import { api } from "../api";
+import { useProjectScope } from "../hooks/useProjectScope";
+import { REJECTED_EVENT_COUNT_KEY } from "../pages/DataQuality";
 import LogoMark from "./LogoMark";
 import ProjectControls from "./ProjectControls";
 
@@ -19,12 +23,32 @@ const menuNavClass = ({ isActive }: { isActive: boolean }) =>
       : "text-on-surface-variant hover:bg-surface-container hover:text-on-surface"
   }`;
 
+// Recent-activity badge: the count of rejection groups seen in the last 24h that
+// are newer than the last acknowledgement, so it flags live problems, not history.
+function RejectedBadge({ count }: { count: number }) {
+  if (count <= 0) return null;
+  return (
+    <span className="ml-1.5 inline-flex min-w-4 items-center justify-center rounded-pill bg-status-warning-muted px-1.5 py-0.5 text-xs font-semibold text-status-warning tabular-nums">
+      {count}
+    </span>
+  );
+}
+
 export default function Layout() {
   const { user, logout } = useAuth();
   const [profileOpen, setProfileOpen] = useState(false);
   const profileRef = useRef<HTMLDivElement>(null);
   useDismiss(profileRef, () => setProfileOpen(false), profileOpen);
   const initials = (user?.name || user?.email || "?").slice(0, 1).toUpperCase();
+
+  const { projectScope } = useProjectScope();
+  const rejectedCount = useQuery({
+    queryKey: [REJECTED_EVENT_COUNT_KEY, projectScope],
+    queryFn: () => api.rejectedEventCount(projectScope as string),
+    enabled: Boolean(projectScope),
+    refetchInterval: 60_000,
+  });
+  const rejectedBadge: ReactNode = <RejectedBadge count={rejectedCount.data?.active_group_count ?? 0} />;
 
   return (
     <div className="min-h-screen bg-surface-dim text-on-surface">
@@ -43,6 +67,10 @@ export default function Layout() {
           <nav aria-label="Primary" className="hidden items-center gap-4 sm:flex">
             <NavLink to="/" end className={headerNavClass}>
               Dashboard
+            </NavLink>
+            <NavLink to="/data-quality" className={headerNavClass}>
+              Data Quality
+              {rejectedBadge}
             </NavLink>
             <NavLink to="/users" className={headerNavClass}>
               Users
@@ -79,6 +107,10 @@ export default function Layout() {
                 <nav aria-label="Account" className="mb-3 border-y border-outline-ghost py-2">
                   <NavLink to="/" end onClick={() => setProfileOpen(false)} className={menuNavClass}>
                     Dashboard
+                  </NavLink>
+                  <NavLink to="/data-quality" onClick={() => setProfileOpen(false)} className={menuNavClass}>
+                    Data Quality
+                    {rejectedBadge}
                   </NavLink>
                   <NavLink to="/users" onClick={() => setProfileOpen(false)} className={menuNavClass}>
                     Users

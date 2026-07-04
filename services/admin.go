@@ -34,6 +34,9 @@ type Admin interface {
 	ReportScreenshot(ctx context.Context, projectKey string, reportID string) (ScreenshotReadResult, error)
 	UpdateReport(ctx context.Context, projectKey string, reportID string, req UpdateReportRequest) (ReportUpdateResponse, error)
 	EventTypes(ctx context.Context, projectKey string) ([]EventTypeSummary, error)
+	RejectedEvents(ctx context.Context, projectKey string) (RejectedEventsResponse, error)
+	RejectedEventCount(ctx context.Context, projectKey string) (int64, error)
+	AcknowledgeRejectedEvents(ctx context.Context, projectKey string) error
 	Settings(ctx context.Context, projectKey string) (SettingsResponse, error)
 	CreateIngestToken(ctx context.Context, projectKey string, req CreateIngestTokenRequest) (CreateIngestTokenResponse, error)
 	SetIngestTokenEnabled(ctx context.Context, projectKey string, tokenID string, enabled bool) (IngestTokenSummary, error)
@@ -260,6 +263,26 @@ type EventTypeSummary struct {
 	EventCount    int64           `json:"event_count"`
 	LastSeenAt    string          `json:"last_seen_at"`
 	SamplePayload json.RawMessage `json:"sample_payload"`
+}
+
+// RejectedEventsResponse powers the Data Quality view: rejection groups plus the
+// count of groups active in the last 24h that are newer than the last
+// acknowledgement (the nav badge value).
+type RejectedEventsResponse struct {
+	Groups           []RejectedEventGroup `json:"groups"`
+	ActiveGroupCount int64                `json:"active_group_count"`
+}
+
+type RejectedEventGroup struct {
+	EventType     string          `json:"event_type"`
+	ReasonCode    string          `json:"reason_code"`
+	ReasonMessage string          `json:"reason_message"`
+	GameVersion   string          `json:"game_version"`
+	BuildChannel  string          `json:"build_channel"`
+	EventCount    int64           `json:"event_count"`
+	FirstSeenAt   string          `json:"first_seen_at"`
+	LastSeenAt    string          `json:"last_seen_at"`
+	SampleEvent   json.RawMessage `json:"sample_event"`
 }
 
 type SettingsResponse struct {
@@ -1045,6 +1068,52 @@ func (s *adminService) EventTypes(ctx context.Context, projectKey string) ([]Eve
 		})
 	}
 	return out, nil
+}
+
+func (s *adminService) RejectedEvents(ctx context.Context, projectKey string) (RejectedEventsResponse, error) {
+	project, err := s.loadProject(ctx, projectKey)
+	if err != nil {
+		return RejectedEventsResponse{}, err
+	}
+	rows, err := s.queries.AdminRejectedEventGroups(ctx, project.ID)
+	if err != nil {
+		return RejectedEventsResponse{}, err
+	}
+	count, err := s.queries.AdminCountActiveRejectionGroups(ctx, project.ID)
+	if err != nil {
+		return RejectedEventsResponse{}, err
+	}
+	groups := make([]RejectedEventGroup, 0, len(rows))
+	for _, row := range rows {
+		groups = append(groups, RejectedEventGroup{
+			EventType:     row.EventType,
+			ReasonCode:    row.ReasonCode,
+			ReasonMessage: row.ReasonMessage,
+			GameVersion:   row.GameVersion,
+			BuildChannel:  row.BuildChannel,
+			EventCount:    row.EventCount,
+			FirstSeenAt:   formatTime(row.FirstSeenAt),
+			LastSeenAt:    formatTime(row.LastSeenAt),
+			SampleEvent:   row.SampleEvent,
+		})
+	}
+	return RejectedEventsResponse{Groups: groups, ActiveGroupCount: count}, nil
+}
+
+func (s *adminService) RejectedEventCount(ctx context.Context, projectKey string) (int64, error) {
+	project, err := s.loadProject(ctx, projectKey)
+	if err != nil {
+		return 0, err
+	}
+	return s.queries.AdminCountActiveRejectionGroups(ctx, project.ID)
+}
+
+func (s *adminService) AcknowledgeRejectedEvents(ctx context.Context, projectKey string) error {
+	project, err := s.loadProject(ctx, projectKey)
+	if err != nil {
+		return err
+	}
+	return s.queries.AdminAcknowledgeRejectedEvents(ctx, project.ID)
 }
 
 func (s *adminService) Settings(ctx context.Context, projectKey string) (SettingsResponse, error) {

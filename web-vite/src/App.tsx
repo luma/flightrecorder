@@ -9,6 +9,7 @@ import LoginError from "./pages/LoginError";
 import MCPConsent from "./pages/MCPConsent";
 import UsersPage from "./pages/UsersPage";
 import AgentsPage from "./pages/AgentsPage";
+import DataQuality from "./pages/DataQuality";
 
 export default function App() {
   return (
@@ -32,6 +33,7 @@ export default function App() {
         }
       >
         <Route path="/" element={<Dashboard />} />
+        <Route path="/data-quality" element={<DataQuality />} />
         <Route path="/users" element={<UsersPage />} />
         <Route path="/agents" element={<AgentsPage />} />
       </Route>
