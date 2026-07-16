@@ -14,8 +14,8 @@ import (
 
 func main() {
 	app := &cli.Command{
-		Name:  "pithy",
-		Usage: "Your second brain",
+		Name:  "flightrecorder",
+		Usage: "flightrecorder",
 		Commands: []*cli.Command{
 			service.Command(),
 			migrate.Command(),

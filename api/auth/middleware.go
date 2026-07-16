@@ -11,7 +11,7 @@ import (
 	"github.com/luma/flightrecorder/services"
 )
 
-const SessionCookieName = "pithy_session"
+const SessionCookieName = "flightrecorder_session"
 
 // SecureCookie returns true when cookies should have the Secure flag set.
 // In production (any non-localhost base URL), cookies must only travel over TLS.

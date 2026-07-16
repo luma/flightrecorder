@@ -17,7 +17,7 @@ func Command() *cli.Command {
 		Aliases: []string{"v"},
 		Usage:   "Display version information",
 		Description: `
-The version command displays build and version information about the Pithy API.
+The version command displays build and version information about the Flightrecorder API.
 This includes version number, build ID, branch, build time, and platform details.
 `,
 		Flags: []cli.Flag{
@@ -39,7 +39,7 @@ This includes version number, build ID, branch, build time, and platform details
 			}
 
 			// Pretty-print version info
-			fmt.Printf("Pithy %s\n", info.Version)
+			fmt.Printf("Flightrecorder %s\n", info.Version)
 			fmt.Printf("Build:     %s\n", info.Build)
 			fmt.Printf("Branch:    %s\n", info.Branch)
 			fmt.Printf("Built:     %s\n", info.BuildTime)
